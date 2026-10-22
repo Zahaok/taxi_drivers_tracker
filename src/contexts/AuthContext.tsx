@@ -17,6 +17,15 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const STORAGE_KEY = 'taxi_users';
 const SESSION_KEY = 'taxi_session';
 
+function loadUsers(): User[] {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
 function initializeDefaultUsers(): User[] {
   const users: User[] = [
     {
@@ -58,23 +67,25 @@ function initializeDefaultUsers(): User[] {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
+  const [usersList, setUsersList] = useState<User[]>(() => loadUsers());
 
   useEffect(() => {
-    const users = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
-    if (!users || users.length === 0) {
-      initializeDefaultUsers();
+    let users = loadUsers();
+    if (users.length === 0) {
+      users = initializeDefaultUsers();
     }
+    // Always sync state with the loaded users — otherwise login races
+    // against the empty initial state on the first render tick.
+    setUsersList(users);
     const session = localStorage.getItem(SESSION_KEY);
     if (session) {
-      const allUsers = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
-      const found = allUsers.find((u: User) => u.id === session);
+      const found = users.find((u: User) => u.id === session);
       if (found) setUser(found);
     }
   }, []);
 
   const login = (email: string, password: string) => {
-    const users: User[] = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
-    const found = users.find(u => u.email === email);
+    const found = usersList.find(u => u.email.toLowerCase() === email.trim().toLowerCase());
     if (!found) return { success: false, error: 'Пользователь не найден' };
     if (!verifyPassword(password, found.password_hash)) return { success: false, error: 'Неверный пароль' };
     setUser(found);
@@ -83,18 +94,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const register = (username: string, email: string, password: string, role: Role) => {
-    const users: User[] = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
-    if (users.find(u => u.email === email)) return { success: false, error: 'Email уже зарегистрирован' };
+    const trimmedEmail = email.trim().toLowerCase();
+    if (!username.trim()) return { success: false, error: 'Укажите имя пользователя' };
+    if (password.length < 6) return { success: false, error: 'Пароль должен быть не короче 6 символов' };
+    if (usersList.find(u => u.email.toLowerCase() === trimmedEmail)) return { success: false, error: 'Email уже зарегистрирован' };
     const newUser: User = {
       id: generateId(),
-      username,
-      email,
+      username: username.trim(),
+      email: trimmedEmail,
       password_hash: hashPassword(password),
       role,
       created_at: new Date().toISOString()
     };
-    users.push(newUser);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(users));
+    const updated = [...usersList, newUser];
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+    setUsersList(updated);
     return { success: true };
   };
 
@@ -104,24 +118,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const updateUser = (id: string, data: Partial<User>) => {
-    const users: User[] = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
-    const idx = users.findIndex(u => u.id === id);
+    const idx = usersList.findIndex(u => u.id === id);
     if (idx !== -1) {
-      users[idx] = { ...users[idx], ...data };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(users));
-      if (user?.id === id) setUser(users[idx]);
+      const updated = [...usersList];
+      updated[idx] = { ...updated[idx], ...data };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+      setUsersList(updated);
+      if (user?.id === id) setUser(updated[idx]);
     }
   };
 
   const deleteUser = (id: string) => {
-    const users: User[] = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
-    const filtered = users.filter(u => u.id !== id);
+    const filtered = usersList.filter(u => u.id !== id);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(filtered));
+    setUsersList(filtered);
+    if (user?.id === id) logout();
   };
 
-  const getAllUsers = (): User[] => {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
-  };
+  const getAllUsers = (): User[] => usersList;
 
   return (
     <AuthContext.Provider value={{ user, login, register, logout, updateUser, deleteUser, getAllUsers }}>

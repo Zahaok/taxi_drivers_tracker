@@ -13,6 +13,16 @@ export default function UsersPage() {
   const [role, setRole] = useState<Role>('driver');
   const [error, setError] = useState('');
 
+  const handleDelete = (id: string) => {
+    if (id === currentUser?.id) {
+      setError('Нельзя удалить свой аккаунт');
+      return;
+    }
+    if (confirm('Удалить пользователя?')) {
+      deleteUser(id);
+    }
+  };
+
   const users = getAllUsers();
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -42,16 +52,6 @@ export default function UsersPage() {
     setEmail(u.email);
     setRole(u.role);
     setShowForm(true);
-  };
-
-  const handleDelete = (id: string) => {
-    if (id === currentUser?.id) {
-      setError('Нельзя удалить свой аккаунт');
-      return;
-    }
-    if (confirm('Удалить пользователя?')) {
-      deleteUser(id);
-    }
   };
 
   const getRoleBadge = (role: Role) => {

@@ -3,6 +3,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { useData } from '../contexts/DataContext';
 import { TrendingUp, Users, FileText, DollarSign } from 'lucide-react';
 import { formatCurrency } from '../utils/calculations';
+import { getWheelyBreakdown } from '../utils/wheely';
+import { getYandexBreakdown } from '../utils/yandex';
 import { User } from '../types';
 
 export default function DashboardPage() {
@@ -10,6 +12,7 @@ export default function DashboardPage() {
   const { reports } = useData();
   const users = getAllUsers();
 
+  // Recompute stats when reports change (e.g., after login following report creation)
   const stats = useMemo(() => {
     const userReports = user?.role === 'driver'
       ? reports.filter(r => r.user_id === user.id)
@@ -17,10 +20,14 @@ export default function DashboardPage() {
 
     const totalPayout = userReports.reduce((sum, r) => sum + r.total_driver_payout, 0);
     const avgPayout = userReports.length > 0 ? totalPayout / userReports.length : 0;
-    const totalWheely = userReports.reduce((sum, r) => sum + r.wheely_gross * 0.3, 0);
-    const totalYandex = userReports.reduce((sum, r) => sum + r.yandex_gross * 0.35, 0);
+    // Чистый Wheely: база 30% − агентское − парковка + бонусы
+    const totalWheely = userReports.reduce((sum, r) => sum + getWheelyBreakdown(r).net, 0);
+    // Чистый Яндекс: база 35% − чаевые − ЗСД; возврат руководителю: 65% от грязных
+    const totalYandex = userReports.reduce((sum, r) => sum + getYandexBreakdown(r).net, 0);
+    const totalManagerRepayment = userReports.reduce((sum, r) => sum + getYandexBreakdown(r).managerRepayment, 0);
+    const totalTips = userReports.reduce((sum, r) => sum + (r.tips ?? 0), 0);
 
-    return { totalPayout, avgPayout, totalWheely, totalYandex, reportCount: userReports.length };
+    return { totalPayout, avgPayout, totalWheely, totalYandex, totalManagerRepayment, totalTips, reportCount: userReports.length };
   }, [reports, user]);
 
   const topDrivers = useMemo(() => {
@@ -65,6 +72,27 @@ export default function DashboardPage() {
       icon: Users,
       color: 'text-amber-400',
       bg: 'bg-amber-500/10'
+    },
+    {
+      title: 'Яндекс (чистый)',
+      value: formatCurrency(stats.totalYandex),
+      icon: DollarSign,
+      color: 'text-blue-400',
+      bg: 'bg-blue-500/10'
+    },
+    {
+      title: 'Возврат руководителю',
+      value: formatCurrency(stats.totalManagerRepayment),
+      icon: TrendingUp,
+      color: 'text-orange-400',
+      bg: 'bg-orange-500/10'
+    },
+    {
+      title: 'Чаевые',
+      value: formatCurrency(stats.totalTips),
+      icon: DollarSign,
+      color: 'text-yellow-300',
+      bg: 'bg-yellow-500/10'
     }
   ];
 
@@ -79,7 +107,7 @@ export default function DashboardPage() {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         {cards.map((card, i) => (
           <div key={i} className="bg-gray-800/50 backdrop-blur border border-gray-700/50 rounded-xl p-5">
             <div className="flex items-center justify-between">
