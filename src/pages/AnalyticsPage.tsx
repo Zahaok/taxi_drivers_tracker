@@ -2,6 +2,8 @@ import React, { useMemo, useRef, useEffect, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useData } from '../contexts/DataContext';
 import { formatCurrency } from '../utils/calculations';
+import { getWheelyBreakdown } from '../utils/wheely';
+import { getYandexBreakdown } from '../utils/yandex';
 import { Download, Filter } from 'lucide-react';
 import { exportToCSV } from '../utils/calculations';
 import { Chart, registerables } from 'chart.js';
@@ -28,11 +30,12 @@ export default function AnalyticsPage() {
   const filteredReports = useMemo(() => {
     let filtered = reports.filter(r => r.year === filterYear);
     if (user?.role === 'driver') {
+      // Drivers only ever see their own data
       filtered = filtered.filter(r => r.user_id === user.id);
     } else if (filterDriver !== 'all') {
       filtered = filtered.filter(r => r.user_id === filterDriver);
     }
-    return filtered.sort((a, b) => a.week_number - b.week_number);
+    return [...filtered].sort((a, b) => a.week_number - b.week_number);
   }, [reports, filterDriver, filterYear, user]);
 
   const years = useMemo(() => {
@@ -86,15 +89,15 @@ export default function AnalyticsPage() {
     if (!pieChartRef.current) return;
     if (pieChartInstance.current) pieChartInstance.current.destroy();
 
-    const totalWheely = filteredReports.reduce((s, r) => s + r.wheely_gross * 0.3, 0);
-    const totalYandex = filteredReports.reduce((s, r) => s + r.yandex_gross * 0.35, 0);
+    const totalWheely = filteredReports.reduce((s, r) => s + getWheelyBreakdown(r).net, 0);
+    const totalYandex = filteredReports.reduce((s, r) => s + getYandexBreakdown(r).net, 0);
     const totalOwnRent = filteredReports.reduce((s, r) => s + r.own_rent_gross * 0.3, 0);
     const totalHourly = filteredReports.reduce((s, r) => s + r.hourly_rent_hours * 500, 0);
 
     pieChartInstance.current = new Chart(pieChartRef.current, {
       type: 'doughnut',
       data: {
-        labels: ['Wheely', 'Яндекс', 'Собств. аренда', 'Почасовая'],
+        labels: ['Wheely (чистый)', 'Яндекс (чистый)', 'Собств. аренда', 'Почасовая'],
         datasets: [{
           data: [totalWheely, totalYandex, totalOwnRent, totalHourly],
           backgroundColor: ['#f59e0b', '#3b82f6', '#10b981', '#8b5cf6'],
@@ -120,18 +123,23 @@ export default function AnalyticsPage() {
     if (barChartInstance.current) barChartInstance.current.destroy();
 
     const labels = filteredReports.map(r => `Нед. ${r.week_number}`);
-    const wheelyData = filteredReports.map(r => r.wheely_gross * 0.3);
-    const yandexData = filteredReports.map(r => r.yandex_gross * 0.35);
-    const rentData = filteredReports.map(r => r.own_rent_gross * 0.3 + r.hourly_rent_hours * 500);
+    // Чистый Wheely = база 30% − агентское − парковка + бонусы; чаевые — отдельная составляющая выплаты
+    const wheelyData = filteredReports.map(r => Math.round(getWheelyBreakdown(r).net));
+    const yandexData = filteredReports.map(r => Math.round(getYandexBreakdown(r).net));
+    const managerRepaymentData = filteredReports.map(r => Math.round(getYandexBreakdown(r).managerRepayment));
+    const rentData = filteredReports.map(r => Math.round(r.own_rent_gross * 0.3 + r.hourly_rent_hours * 500));
+    const tipsData = filteredReports.map(r => Math.round((r.tips ?? 0)));
 
     barChartInstance.current = new Chart(barChartRef.current, {
       type: 'bar',
       data: {
         labels,
         datasets: [
-          { label: 'Wheely', data: wheelyData, backgroundColor: '#f59e0b' },
-          { label: 'Яндекс', data: yandexData, backgroundColor: '#3b82f6' },
-          { label: 'Аренда', data: rentData, backgroundColor: '#10b981' }
+          { label: 'Wheely (чистый)', data: wheelyData, backgroundColor: '#f59e0b' },
+          { label: 'Яндекс (чистый)', data: yandexData, backgroundColor: '#3b82f6' },
+          { label: 'Возврат руководителю', data: managerRepaymentData, backgroundColor: '#f97316' },
+          { label: 'Аренда', data: rentData, backgroundColor: '#10b981' },
+          { label: 'Чаевые', data: tipsData, backgroundColor: '#eab308' }
         ]
       },
       options: {

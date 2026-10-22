@@ -1,3 +1,23 @@
+import { getWheelyBreakdown } from './wheely';
+import { getYandexBreakdown } from './yandex';
+
+export interface PayoutInput {
+  wheelyGross: number;
+  wheelyAgentFee: number;      // агентское вознаграждение (- из Wheely)
+  wheelyAirportParking: number; // парковка аэропорт (- из Wheely)
+  yandexGross: number;
+  yandexTips: number;          // чаевые Яндекс (- из заработка по Яндекс)
+  zsd: number;                 // ЗСД (- из заработка по Яндекс и из общей выплаты)
+  ownRentGross: number;
+  hourlyRentHours: number;
+  compensations: number;
+  bonuses: number;             // бонусы (+ к Wheely)
+  tips: number;                // чаевые (+ к итоговой выплате)
+  deductions: number;
+}
+
+export function calculateDriverPayout(input: PayoutInput): number;
+// Совместимость со старым позиционным вызовом
 export function calculateDriverPayout(
   wheelyGross: number,
   yandexGross: number,
@@ -6,13 +26,57 @@ export function calculateDriverPayout(
   compensations: number,
   bonuses: number,
   deductions: number
+): number;
+export function calculateDriverPayout(
+  arg: PayoutInput | number,
+  yandexGross?: number,
+  ownRentGross?: number,
+  hourlyRentHours?: number,
+  compensations?: number,
+  bonuses?: number,
+  deductions?: number
 ): number {
-  const wheelyEarnings = wheelyGross * 0.30;
-  const yandexEarnings = yandexGross * 0.35;
-  const ownRentEarnings = ownRentGross * 0.30;
-  const hourlyRentEarnings = hourlyRentHours * 500;
+  let p: PayoutInput;
+  if (typeof arg === 'object') {
+    p = arg;
+  } else {
+    p = {
+      wheelyGross: arg,
+      wheelyAgentFee: 0,
+      wheelyAirportParking: 0,
+      yandexGross: yandexGross ?? 0,
+      yandexTips: 0,
+      zsd: 0,
+      ownRentGross: ownRentGross ?? 0,
+      hourlyRentHours: hourlyRentHours ?? 0,
+      compensations: compensations ?? 0,
+      bonuses: bonuses ?? 0,
+      tips: 0,
+      deductions: deductions ?? 0,
+    };
+  }
 
-  return wheelyEarnings + yandexEarnings + ownRentEarnings + hourlyRentEarnings + compensations + bonuses - deductions;
+  // Чистый доход по Wheely: база 30% − агентское − парковка + бонусы
+  const wheelyNet = getWheelyBreakdown({
+    wheely_gross: p.wheelyGross,
+    wheely_agent_fee: p.wheelyAgentFee,
+    wheely_airport_parking: p.wheelyAirportParking,
+    bonuses: p.bonuses,
+  }).net;
+
+  // Чистый заработок по Яндекс: база 35% − чаевые − ЗСД
+  const yandex = getYandexBreakdown({
+    yandex_gross: p.yandexGross,
+    yandex_tips: p.yandexTips,
+    zsd: p.zsd,
+  });
+  const ownRentEarnings = p.ownRentGross * 0.30;
+  const hourlyRentEarnings = p.hourlyRentHours * 500;
+
+  // Чаевые (общие) прибавляются к общей выплате;
+  // ЗСД additionally вычитается из общей выплаты (двойное удержание по бизнес-логике)
+  return wheelyNet + yandex.net + ownRentEarnings + hourlyRentEarnings
+    + p.compensations + p.tips - p.deductions - p.zsd;
 }
 
 export function getWeekNumber(date: Date): number {
@@ -53,7 +117,20 @@ export function formatCurrency(amount: number): string {
 }
 
 export function generateId(): string {
-  return Date.now().toString(36) + Math.random().toString(36).substr(2);
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  // Fallback for older browsers / non-secure contexts
+  return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+}
+
+// Escape a value for CSV (RFC 4180): wrap in quotes if it contains ; " or newline
+function csvEscape(value: unknown): string {
+  const s = String(value ?? '');
+  if (/[";\n\r]/.test(s)) {
+    return '"' + s.replace(/"/g, '""') + '"';
+  }
+  return s;
 }
 
 export function hashPassword(password: string): string {
@@ -72,28 +149,41 @@ export function verifyPassword(password: string, hash: string): boolean {
 }
 
 export function exportToCSV(reports: any[], users: any[], filename: string = 'reports.csv') {
-  const headers = ['Водитель', 'Год', 'Неделя', 'Wheely (грязные)', 'Яндекс (грязные)', 'Собств. аренда', 'Почас. часы', 'Компенсации', 'Бонусы', 'Вычеты', 'Итого к выплате'];
+  const headers = ['Водитель', 'Год', 'Неделя', 'Wheely (грязные)', 'Агентское Wheely (-)', 'Парковка аэропорт (-)', 'Бонусы Wheely (+)', 'Wheely (чистый)', 'Яндекс (грязные)', 'Чаевые Яндекс (-)', 'ЗСД (-)', 'Яндекс (чистый)', 'Возврат руководителю (65%)', 'Собств. аренда', 'Почас. часы', 'Компенсации', 'Чаевые', 'Вычеты', 'Итого к выплате'];
   const rows = reports.map(r => {
     const user = users.find(u => u.id === r.user_id);
+    const w = getWheelyBreakdown(r);
+    const y = getYandexBreakdown(r);
     return [
       user?.username || 'N/A',
       r.year,
       r.week_number,
       r.wheely_gross,
+      r.wheely_agent_fee ?? 0,
+      r.wheely_airport_parking ?? 0,
+      r.bonuses,
+      Math.round(w.net),
       r.yandex_gross,
+      r.yandex_tips ?? 0,
+      r.zsd ?? 0,
+      Math.round(y.net),
+      Math.round(y.managerRepayment),
       r.own_rent_gross,
       r.hourly_rent_hours,
       r.compensations,
-      r.bonuses,
+      r.tips ?? 0,
       r.deductions,
-      r.total_driver_payout.toFixed(2)
+      Number.isFinite(r.total_driver_payout) ? r.total_driver_payout.toFixed(2) : ''
     ];
   });
 
-  const csvContent = [headers, ...rows].map(row => row.join(';')).join('\n');
+  const csvContent = [headers, ...rows].map(row => row.map(csvEscape).join(';')).join('\r\n');
   const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
-  link.href = URL.createObjectURL(blob);
+  link.href = url;
   link.download = filename;
   link.click();
+  // Release the object URL to avoid memory leaks
+  setTimeout(() => URL.revokeObjectURL(url), 0);
 }
