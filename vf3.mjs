@@ -1,0 +1,16 @@
+import { chromium } from 'playwright';
+const b = await chromium.launch();
+const pg = await b.newPage({ viewport: { width: 1280, height: 900 } });
+await pg.goto('http://localhost:3000/', { waitUntil: 'networkidle' });
+const inputs = await pg.$$('input');
+await inputs[0].fill('admin@taxi.ru'); await inputs[1].fill('admin123');
+await pg.click('button[type="submit"]'); await pg.waitForTimeout(1200);
+await pg.click('text=Отчёты'); await pg.waitForTimeout(800);
+await pg.click('button:has-text("Создать отчёт")'); await pg.waitForTimeout(1000);
+const t = await pg.textContent('body');
+console.log('PERIOD_LINE_REMOVED:', !/— \d{4}, \d{4} г\./.test(t||''));
+console.log('PARENS_REMOVED:', !/(Wheely 70%|70% от общего дохода|65% от общего дохода|\(70%\))/.test(t||''));
+console.log('HAS_PODLEZIT:', (t||'').includes('Подлежит переводу'));
+console.log('HAS_COMMENT:', (t||'').includes('Комментарий к сумме к выплате'));
+await pg.screenshot({ path: 'verify_form.png', fullPage: true });
+await b.close();

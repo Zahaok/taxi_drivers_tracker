@@ -1,0 +1,10 @@
+
+> dev
+> vite --host 0.0.0.0 --port 5173
+
+
+  VITE v6.4.3  ready in 488 ms
+
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: http://21.0.14.41:5173/
+7:40:50 PM [vite] (client) hmr update /src/contexts/AuthContext.tsx, /src/index.css

@@ -1,5 +1,8 @@
-node_modules/
-.next/
-dist/
-build/
-*.log
+.env.local
+.env.*
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db

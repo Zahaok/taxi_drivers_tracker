@@ -64,9 +64,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
     const newLogs: ReportEditLog[] = [];
     const fields: (keyof WeeklyReport)[] = [
-      'wheely_gross', 'wheely_agent_fee', 'wheely_airport_parking',
-      'yandex_gross', 'yandex_tips', 'zsd', 'own_rent_gross', 'hourly_rent_hours',
-      'compensations', 'bonuses', 'tips', 'deductions', 'total_driver_payout'
+      'wheely_gross', 'wheely_agent_fee', 'wheely_airport_parking', 'sober_driver', 'wheely_tips',
+      'grnz', 'mileage', 'car',
+      'yandex_gross', 'yandex_tips', 'zsd', 'own_rent_gross', 'zsd_own_rent', 'hourly_rent_hours',
+      'compensations', 'bonuses', 'adjustmentBonuses', 'fines', 'zsdPayout', 'comment', 'total_driver_payout'
     ];
 
     fields.forEach(field => {
