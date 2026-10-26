@@ -73,9 +73,9 @@ const baseOptions = (): any => ({
 });
 
 export default function AnalyticsPage() {
-  const { user, getAllUsers } = useAuth();
+  const { user, usersList } = useAuth();
   const { reports } = useData();
-  const allUsers = getAllUsers();
+  const allUsers = usersList;
   const drivers = allUsers.filter(u => u.role === 'driver');
 
   const [filterDriver, setFilterDriver] = useState('all');

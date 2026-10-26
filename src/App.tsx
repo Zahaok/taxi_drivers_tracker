@@ -7,14 +7,34 @@ import ReportsPage from './pages/ReportsPage';
 import AnalyticsPage from './pages/AnalyticsPage';
 import UsersPage from './pages/UsersPage';
 import SettingsPage from './pages/SettingsPage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
+import MustChangePasswordModal from './components/MustChangePasswordModal';
 import { Car, LayoutDashboard, FileText, BarChart3, Users, LogOut, Menu, X, Settings2 } from 'lucide-react';
 
 type Page = 'dashboard' | 'reports' | 'analytics' | 'users' | 'settings';
 
 function AppContent() {
-  const { user, logout } = useAuth();
+  const { user, logout, initializing } = useAuth();
+  // ВАЖНО: все хуки должны вызываться ДО любых ранних return — иначе при смене
+  // количества рендеримых хуков React падает с ошибкой #310 (Rendered fewer hooks).
+  const [route, setRoute] = useState(() => window.location.hash);
   const [currentPage, setCurrentPage] = useState<Page>('dashboard');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  React.useEffect(() => { const on = () => setRoute(window.location.hash); window.addEventListener('hashchange', on); return () => window.removeEventListener('hashchange', on); }, []);
+
+  // Ссылки из писем: #/reset-password?token=... и #/activate?token=...
+  if (/^#\/(reset-password|activate)/.test(route)) {
+    return <ResetPasswordPage />;
+  }
+
+  if (initializing) {
+    return (
+      <div className="min-h-screen bg-[#f6f7f9] flex items-center justify-center">
+        <div className="animate-spin w-8 h-8 border-2 border-amber-500 border-t-transparent rounded-full" />
+      </div>
+    );
+  }
 
   if (!user) {
     return <LoginPage />;
@@ -51,6 +71,7 @@ function AppContent() {
 
   return (
     <div className="min-h-screen bg-[#f6f7f9] flex">
+      <MustChangePasswordModal />
       {/* Sidebar - Desktop */}
       <aside className="hidden lg:flex flex-col w-64 bg-white border-r border-gray-200 shadow-sm sticky top-0 h-screen overflow-y-auto">
         <div className="p-6 border-b border-gray-100">

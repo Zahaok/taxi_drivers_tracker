@@ -625,7 +625,7 @@ function ReportDetailView({ report, driverName, onBack }: { report: WeeklyReport
 }
 
 export default function ReportsPage() {
-  const { user, getAllUsers } = useAuth();
+  const { user, usersList } = useAuth();
   const { reports, addReport, updateReport, deleteReport, getEditLogsByReport } = useData();
   const [showForm, setShowForm] = useState(false);
   const [editingReport, setEditingReport] = useState<WeeklyReport | null>(null);
@@ -635,7 +635,7 @@ export default function ReportsPage() {
   const [viewingReport, setViewingReport] = useState<WeeklyReport | null>(null);
   const [error, setError] = useState('');
 
-  const allUsers = getAllUsers();
+  const allUsers = usersList;
   const drivers = allUsers.filter(u => u.role === 'driver');
 
   const filteredReports = useMemo(() => {

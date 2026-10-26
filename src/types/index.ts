@@ -1,12 +1,14 @@
 export type Role = 'driver' | 'manager' | 'admin';
 
+// Публичное представление пользователя (без паролей и хэшей) — приходит с бэкенда.
 export interface User {
   id: string;
   username: string;
   email: string;
-  password_hash: string;
   role: Role;
+  must_change_password?: boolean;
   created_at: string;
+  last_login_at?: string | null;
 }
 
 export interface WeeklyReport {

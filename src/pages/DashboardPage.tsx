@@ -14,9 +14,9 @@ import { getOwnRentBreakdown } from '../utils/ownRent';
 import { User } from '../types';
 
 export default function DashboardPage() {
-  const { user, getAllUsers } = useAuth();
+  const { user, usersList } = useAuth();
   const { reports } = useData();
-  const users = getAllUsers();
+  const users = usersList;
 
   // Recompute stats when reports change (e.g., after login following report creation)
   const stats = useMemo(() => {
