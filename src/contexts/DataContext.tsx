@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { WeeklyReport, ReportEditLog } from '../types';
 import { generateId } from '../utils/calculations';
+import { migrateReport } from '../utils/wheely';
 import { initializeDemoData } from '../utils/demoData';
 
 interface DataContextType {
@@ -26,7 +27,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     initializeDemoData();
     const stored = localStorage.getItem(REPORTS_KEY);
-    if (stored) setReports(JSON.parse(stored));
+    if (stored) setReports(JSON.parse(stored).map(migrateReport));
     const logs = localStorage.getItem(LOGS_KEY);
     if (logs) setEditLogs(JSON.parse(logs));
   }, []);
@@ -63,8 +64,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
     const newLogs: ReportEditLog[] = [];
     const fields: (keyof WeeklyReport)[] = [
-      'wheely_gross', 'yandex_gross', 'own_rent_gross', 'hourly_rent_hours',
-      'compensations', 'bonuses', 'deductions', 'total_driver_payout'
+      'wheely_gross', 'wheely_agent_fee', 'wheely_airport_parking', 'sober_driver', 'wheely_tips',
+      'grnz', 'mileage', 'car',
+      'yandex_gross', 'yandex_tips', 'zsd', 'own_rent_gross', 'zsd_own_rent', 'hourly_rent_hours',
+      'compensations', 'bonuses', 'adjustmentBonuses', 'fines', 'zsdPayout', 'comment', 'total_driver_payout'
     ];
 
     fields.forEach(field => {

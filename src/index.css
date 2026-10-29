@@ -12,11 +12,11 @@
   body {
     margin: 0;
     padding: 0;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    font-family: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    background-color: #111827;
-    color: #f3f4f6;
+    background-color: #f6f7f9;
+    color: #111827;
     min-height: 100vh;
   }
 
@@ -24,29 +24,40 @@
     min-height: 100vh;
   }
 
-  /* Custom scrollbar */
+  /* Custom scrollbar (light) */
   ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
+    width: 8px;
+    height: 8px;
   }
 
   ::-webkit-scrollbar-track {
-    background: #1f2937;
+    background: #f1f2f4;
   }
 
   ::-webkit-scrollbar-thumb {
-    background: #4b5563;
-    border-radius: 3px;
+    background: #cbd2d9;
+    border-radius: 4px;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background: #6b7280;
+    background: #9aa3ad;
   }
 
-  /* Select styling for dark theme */
+  /* Light form controls */
   select option {
-    background-color: #374151;
-    color: #f3f4f6;
+    background-color: #ffffff;
+    color: #111827;
+  }
+
+  input::placeholder {
+    color: #9ca3af;
+  }
+
+  /* Smooth focus ring for better usability */
+  input:focus-visible,
+  select:focus-visible,
+  button:focus-visible {
+    outline: none;
   }
 
   /* Input number spinner styling */
@@ -54,4 +65,36 @@
   input[type="number"]::-webkit-outer-spin-button {
     opacity: 1;
   }
+}
+
+/* ===== Мобильная адаптация и защита от «съезжания» плиток при зуме ===== */
+html, body {
+  max-width: 100%;
+  overflow-x: hidden;
+  /* плавное масштабирование шрифта вместо жёстких фикс. размеров */
+  -webkit-text-size-adjust: 100%;
+}
+
+#root {
+  max-width: 100%;
+}
+
+/* Любой элемент-грид не должен расширяться содержимым (min-content = 0) */
+[class*="grid"] > * {
+  min-width: 0;
+}
+
+/* Числовые поля на мобильных — удобный ввод денег */
+@media (max-width: 640px) {
+  input[type="number"] {
+    font-size: 16px; /* предотвращает авто-zoom iOS при фокусе */
+  }
+  /* секционные заголовки форм компактнее */
+  h1 { font-size: 1.5rem; }
+}
+
+/* Waterfall-строки: длинный текст переносится, а не растягивает плитку */
+.justify-between > span:first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }

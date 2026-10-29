@@ -1,5 +1,18 @@
 node_modules/
-.next/
 dist/
-build/
 *.log
+*.out
+.env.local
+.env.*.local
+server/data/outbox/
+
+# build artifacts & screenshots
+preview_*.png
+verify_*.png
+server/data/*.sqlite
+
+# local data, outbox and one-off scripts
+server/data/
+ui_round*.cjs
+verify_*.mjs
+vf*.mjs
