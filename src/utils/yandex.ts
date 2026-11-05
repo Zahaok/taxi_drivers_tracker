@@ -1,6 +1,7 @@
 import { WeeklyReport } from '../types';
-import { roundRubles } from './wheely';
+import { num, roundRubles } from './money';
 import { yandexShare } from './settings';
+
 // Формула:
 //   База Яндекс = общий доход × 35%
 //   − чаевые (вычитаются из заработка по Яндекс)
@@ -22,11 +23,6 @@ export interface YandexBreakdown {
   net: number;                // чистый заработок по Яндекс (после чаевых и ЗСД)
   managerRepayment: number;   // сумма, подлежащая возврату руководителю (65% от общего дохода)
 }
-
-const num = (v: unknown): number => {
-  const n = typeof v === 'number' ? v : Number(v);
-  return Number.isFinite(n) ? n : 0;
-};
 
 export function getYandexBreakdown(
   report: Pick<WeeklyReport, 'yandex_gross' | 'yandex_tips' | 'zsd'> |

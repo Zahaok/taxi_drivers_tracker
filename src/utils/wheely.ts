@@ -1,30 +1,11 @@
 import { WeeklyReport } from '../types';
-import { calculateDriverPayout, effectiveZsdPayout } from './calculations';
+import { num, roundRubles } from './money';
+import { wheelyShare } from './settings';
+import { calculateDriverPayout, effectiveZsdPayout, PayoutInput } from './calculations';
 
 // Пересчёт сохранённого итога выплаты из актуальных данных отчёта (см. migrateReport).
-export function recalcPayout(r: WeeklyReport): number {
-  const n = (v: unknown) => {
-    const x = typeof v === 'number' ? v : Number(v);
-    return Number.isFinite(x) ? x : 0;
-  };
-  return calculateDriverPayout({
-    wheelyGross: n(r.wheely_gross),
-    wheelyAgentFee: n(r.wheely_agent_fee),
-    wheelyAirportParking: n(r.wheely_airport_parking),
-    soberDriver: n(r.sober_driver),
-    wheelyTips: n(r.wheely_tips),
-    yandexGross: n(r.yandex_gross),
-    yandexTips: n(r.yandex_tips),
-    zsd: n(r.zsd),
-    ownRentGross: n(r.own_rent_gross),
-    zsdOwnRent: n(r.zsd_own_rent),
-    hourlyRentHours: n(r.hourly_rent_hours),
-    compensations: n(r.compensations),
-    bonuses: n(r.bonuses),
-    adjustmentBonuses: n(r.adjustmentBonuses),
-    fines: n(r.fines),
-    zsdPayout: n(r.zsdPayout),
-  });
+export function recalcPayout(r: Partial<WeeklyReport>): number {
+  return calculateDriverPayout(toPayoutInput(r));
 }
 
 // Единая точка правды для расчёта дохода по Wheely.
@@ -38,9 +19,7 @@ export function recalcPayout(r: WeeklyReport): number {
 //   БОНУСЫ НЕ участвуют в распределении 30/70: они прибавляются к уже вычтенным 30% водителя
 //   (пример: заработок с учётом комиссии 30 000 ₽, бонус 700 ₽ → к выплате 30 700 ₽).
 //   Чаевые Wheely НЕ участвуют в формуле выше — они прибавляются напрямую к итоговой сумме к выплате.
-
-import { wheelyShare } from './settings';
-
+//
 // Доли задаются настройками администратора (см. utils/settings.ts).
 // Значение по умолчанию: водитель 30%, сервис удерживает 70%.
 export const DEFAULT_WHEELY_SHARE = 0.30;
@@ -58,15 +37,6 @@ export interface WheelyBreakdown {
                           // отправляется работодателю; водителем НЕ переводится (в «Подлежит переводу» не входит)
   net: number;            // то же, что base (итог по Wheely для водителя с учётом бонусов)
 }
-
-const num = (v: unknown): number => {
-  const n = typeof v === 'number' ? v : Number(v);
-  return Number.isFinite(n) ? n : 0;
-};
-
-// Округляем копейки до целых рублей (в большую или меньшую сторону — по математическим правилам).
-// Это исключает «хвосты» вида 1234.5 из-за процентных долей (30%).
-export const roundRubles = (v: number): number => Math.round(v);
 
 export function getWheelyBreakdown(
   report: Partial<Pick<WeeklyReport,
@@ -112,6 +82,29 @@ export function migrateReport(r: any): WeeklyReport {
     zsdPayout: effectiveZsdPayout(num(r.zsd), num(r.zsd_own_rent)),
     comment: typeof r.comment === 'string' ? r.comment : '',
   };
-  migrated.total_driver_payout = recalcPayout(migrated);
+  migrated.total_driver_payout = calculateDriverPayout(toPayoutInput(migrated));
   return migrated;
+}
+
+// Нормализация любого «сырого» объекта отчёта (в т.ч. Partial/данных из формы или localStorage)
+// к входу расчёта выплаты. Единая точка для миграции и демо-генератора.
+export function toPayoutInput(r: Partial<WeeklyReport>): PayoutInput {
+  return {
+    wheelyGross: num(r.wheely_gross),
+    wheelyAgentFee: num(r.wheely_agent_fee),
+    wheelyAirportParking: num(r.wheely_airport_parking),
+    soberDriver: num(r.sober_driver),
+    wheelyTips: num(r.wheely_tips),
+    yandexGross: num(r.yandex_gross),
+    yandexTips: num(r.yandex_tips),
+    zsd: num(r.zsd),
+    ownRentGross: num(r.own_rent_gross),
+    zsdOwnRent: num(r.zsd_own_rent),
+    hourlyRentHours: num(r.hourly_rent_hours),
+    compensations: num(r.compensations),
+    bonuses: num(r.bonuses),
+    adjustmentBonuses: num(r.adjustmentBonuses),
+    fines: num(r.fines),
+    zsdPayout: num(r.zsdPayout),
+  };
 }

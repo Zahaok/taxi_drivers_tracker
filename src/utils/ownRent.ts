@@ -1,6 +1,7 @@
 import { WeeklyReport } from '../types';
-import { roundRubles } from './wheely';
+import { num, roundRubles } from './money';
 import { ownRentShare } from './settings';
+
 // Формула (по аналогии с Яндекс):
 //   База водителя = общий доход × 30%
 //   Возврат руководителю = общий доход × 70%
@@ -15,11 +16,6 @@ export interface OwnRentBreakdown {
   base: number;               // доля водителя до корректировок (gross * 30%)
   managerRepayment: number;   // сумма, подлежащая возврату руководителю (70% от общего дохода)
 }
-
-const num = (v: unknown): number => {
-  const n = typeof v === 'number' ? v : Number(v);
-  return Number.isFinite(n) ? n : 0;
-};
 
 export function getOwnRentBreakdown(
   report: Pick<WeeklyReport, 'own_rent_gross'> |
