@@ -3,7 +3,9 @@
 Проект SVdrivers состоит из двух частей:
 
 1. **Фронтенд** — SPA на React/Vite (статические файлы `dist/`), раздаётся IIS.
-2. **Бэкенд** — Node.js API (`server/index.js`, порт 4000): авторизация, bcrypt-хэши паролей, почтовые приглашения/сброс, SQLite (или MySQL — см. раздел 6). PHP в проекте **не используется**, но инструкция показывает, как поднять IIS с PHP+MySQL и «пристегнуть» к нему Node-API через reverse proxy.
+2. **Бэкенд** — **PHP API** (`server-php/`, точка входа `server-php/index.php`) на MySQL: авторизация, JWT, bcrypt-хэши паролей (`password_hash`), почтовые приглашения/сброс (SMTP или outbox), CRUD пользователей и отчётов. Работает как нативное приложение IIS через FastCGI — **Node.js не требуется**.
+
+> Node-версия (`server/index.js` + SQLite) осталась в репозитории только как легаси/локальная разработка. Данная инструкция описывает полностью PHP-сборку: IIS отдаёт статику `dist/` и исполняет `server-php/` на том же сайте.
 
 ---
 
@@ -11,12 +13,12 @@
 
 | Компонент | Зачем | Где взять |
 |---|---|---|
-| IIS 10+ | Веб-сервер для статики + reverse proxy | «Включение компонентов Windows» |
-| URL Rewrite 2.1 | Проксирование `/api/*` на Node | https://iis.net/downloads |
-| ARR 3.0 (Application Request Routing) | Движок проксирования для URL Rewrite | https://iis.net/downloads |
-| Node.js LTS 20+ | Запуск `server/index.js` | https://nodejs.org |
-| Python 3 + Visual Studio Build Tools | Нативная сборка `better-sqlite3` на Windows | https://python.org, https://visualstudio.com |
-| (опционально) PHP 8.x + MySQL 8 | Если хотите использовать MySQL вместо SQLite и свой PHP-код | https://windows.php.net/download, https://dev.mysql.com/downloads |
+| IIS 10+ | Веб-сервер для статики + FastCGI | «Включение компонентов Windows» |
+| URL Rewrite 2.1 | Маршрутизация `/api/*` в PHP + SPA-fallback | https://iis.net/downloads |
+| PHP 8.1+ (NTS x64) | Исполнение бэкенда `server-php/` | https://windows.php.net/download |
+| MySQL 8 | База данных (схема `server-php/database/schema.mysql.sql`) | https://dev.mysql.com/downloads |
+
+ARR и Node.js для PHP-сборки **не нужны**.
 
 ---
 
@@ -38,19 +40,16 @@ Enable-WindowsOptionalFeature -Online -FeatureName `
 
 После установки откройте `http://localhost` — должна открыться страница IIS.
 
-### 1.1 Установите расширения (если ещё не стоят)
+### 1.1 Установите расширение URL Rewrite (если ещё не стоит)
 
 Скачайте и установите (msi, «Next» до конца):
 - **URL Rewrite** — https://www.iis.net/downloads/microsoft/url-rewrite
-- **ARR 3.0** — https://www.iis.net/downloads/microsoft/application-request-routing
 
-После установки ARR: ИИС → корневой сервер → **Application Request Routing Cache → Server Proxy Settings** → включить **Enable proxy cache** → Apply.
+ARR для PHP-сборки не нужен (проксирование на Node не используется).
 
 ---
 
-## 2. PHP и MySQL (опционально, по вашему запросу)
-
-Проект самодостаточен без PHP, но если PHP+MySQL нужны (например, для сопутствующих скриптов или миграции БД):
+## 2. PHP и MySQL
 
 ### 2.1 PHP через FastCGI
 
@@ -111,38 +110,72 @@ icacls C:\inetpub\svdrivers-web /grant IIS_IUSRS:(OI)(CI)RX /T
 
 ---
 
-## 4. Установка бэкенда (Node API)
+## 4. Установка бэкенда (PHP API)
 
-1. Скопируйте проект (без `node_modules`) в `C:\svdrivers-api`.
-2. Установите зависимости. Для нативного модуля `better-sqlite3` на Windows нужны Python 3 и VS Build Tools (галочка «Desktop development with C++»):
+Бэкенд лежит в папке **`server-php/`** проекта:
 
-```bat
-cd C:\svdrivers-api
-npm ci --omit=dev
+```
+server-php/
+├── index.php            — точка входа всех /api/* запросов
+├── config/config.php    — конфигурация (env или local-config.php)
+├── lib/                 — Db (PDO), Jwt, репозитории, mailer
+├── routes/              — auth.php, users.php, reports.php
+└── database/
+    ├── schema.mysql.sql — схема MySQL 8
+    ├── migrate.php      — применение схемы
+    └── seed.php         — демо-аккаунты (админ/менеджер/водитель)
 ```
 
-Если сборка нативного модуля не удаётся — используйте готовый prebuild (обычно скачивается автоматически) или переключитесь на MySQL (раздел 6).
+1. Скопируйте `server-php\` в веб-корень сайта (например `C:\inetpub\svdrivers-web\server-php\`, рядом с файлами из `dist\`). Отдельного каталога или службы не требуется — IIS исполнит PHP напрямую через FastCGI (настройка — раздел 7).
+2. Настройте конфигурацию. Проще всего скопировать `server-php\config\local-config.example.php` → `server-php\config\local-config.php` и заполнить значения (файл не коммитится в git):
 
-3. Настройте `.env`-переменные (можно задать в свойствах сервиса NSSM, см. п. 5):
+```php
+$GLOBALS['SVDRIVERS_DB_DRIVER'] = 'mysql';
+$GLOBALS['SVDRIVERS_DB_HOST']   = '127.0.0.1';
+$GLOBALS['SVDRIVERS_DB_NAME']   = 'svdrivers';
+$GLOBALS['SVDRIVERS_DB_USER']   = 'svdrivers';
+$GLOBALS['SVDRIVERS_DB_PASS']   = 'StrongPass_2026!';
+$GLOBALS['JWT_SECRET']          = 'задайте длинную случайную строку и НЕ меняйте её';
+$GLOBALS['TOKEN_PEPPER']        = 'ещё одна случайная строка';
+$GLOBALS['PUBLIC_APP_URL']      = 'http://localhost:8080'; // базовый URL для ссылок в письмах
+// SMTP пустой -> письма пишутся в server-php/data/outbox/*.json (для локальной проверки)
+$GLOBALS['SMTP_HOST']           = 'smtp.yandex.ru';
+$GLOBALS['SMTP_PORT']           = '465';
+$GLOBALS['SMTP_SECURE']         = 'true';
+$GLOBALS['SMTP_USER']           = 'you@yandex.ru';
+$GLOBALS['SMTP_PASS']           = 'app-password';
+$GLOBALS['MAIL_FROM']           = 'no-reply@svdrivers.local';
+```
 
-| Переменная | Пример | Назначение |
+Все переменные также читаются из окружения (`getenv`), если вы предпочитаете задавать их в настройках пула IIS. Права на запись нужны только каталогу `server-php\data\` (outbox-письма; при sqlite-режиме — ещё и БД-файл там же):
+
+```bat
+icacls C:\inetpub\svdrivers-web\server-php\data /grant IIS_IUSRS:(OI)(CI)M /T
+```
+
+3. Примените схему и создайте первичных пользователей (cmd, из корня проекта или укажите полный путь):
+
+```bat
+C:\php\php.exe C:\inetpub\svdrivers-web\server-php\database\migrate.php
+C:\php\php.exe C:\inetpub\svdrivers-web\server-php\database\seed.php
+```
+
+Созданные сидами учётки (сменить пароли после первого входа!):
+
+| Роль | E-mail | Пароль |
 |---|---|---|
-| `PORT` | `4000` | Порт API |
-| `SVDRIVERS_DATA_DIR` | `C:\svdrivers-data` | Каталог SQLite-файла |
-| `JWT_SECRET` | длинная случайная строка | Подпись токенов |
-| `SMTP_HOST` / `SMTP_PORT` | `smtp.yandex.ru` / `465` | Отправка писем (регистрация, сброс пароля) |
-| `SMTP_USER` / `SMTP_PASS` | логин / app-пароль | Учётная запись почты |
-| `MAIL_FROM` | `no-reply@svdrivers.local` | Отправитель |
-| `APP_BASE_URL` | `http://localhost:8080` | Ссылки в письмах (подтверждение e-mail, сброс пароля) |
-
-Первичный админ-пользователь создаётся сидом:
-```bat
-node server\seed.js
-```
+| admin | admin@svdrivers.ru | Admin2026! |
+| manager | manager@svdrivers.ru | Manager2026! |
+| driver | driver@svdrivers.ru | Driver2026! |
 
 ---
 
-## 5. Автозапуск API как служба Windows (NSSM)
+## 5. (Не требуется) Автозапуск как служба Windows
+
+Для PHP-бэкенда отдельная служба **не нужна**: код исполняет сам IIS через FastCGI (процессы `php-cgi.exe` пулит IIS, перезапускается вместе с сайтом/пулом). Раздел сохранён только для легаси Node-версии (`server/index.js`) — если она вам не используется, пропускайте.
+
+<details>
+<summary>Легаси: запуск Node API через NSSM (не нужен для PHP-сборки)</summary>
 
 1. Скачайте NSSM: https://nssm.cc/download, распакуйте `win64\nssm.exe` в `C:\svdrivers-api\bin`.
 2. Установка службы (cmd от администратора):
@@ -154,32 +187,32 @@ C:\svdrivers-api\bin\nssm set SVdriversAPI AppEnvironmentExtra PORT=4000 JWT_SEC
 C:\svdrivers-api\bin\nssm start SVdriversAPI
 ```
 
-3. Проверка: `curl http://localhost:4000/api/health` (или откройте в браузере) — должен быть JSON-ответ.
-
 Логи службы: `C:\svdrivers-api\logs\` (задаются параметрами `stdout`/`stderr` в NSSM).
 
----
-
-## 6. Вариант с MySQL вместо SQLite
-
-Текущий слой данных (`server/db.js`) — SQLite. Схема портируется на MySQL один-в-один (та же структура `users`, `auth_tokens`, типы `TEXT→VARCHAR(191)`, `INTEGER→TINYINT`). Порядок действий:
-
-1. Замените драйвер: `npm i mysql2` (bcrypt-хэши и JWT остаются без изменений).
-2. В `db.js` замените `better-sqlite3` на `mysql2/promise` (пул соединений), плейсхолдеры `?` совпадают, `COLLATE NOCASE` → `utf8mb4_unicode_ci`.
-3. Строку подключения вынесите в env: `MYSQL_HOST=localhost; MYSQL_DB=svdrivers; MYSQL_USER=svdrivers; MYSQL_PASS=...`.
-
-> Если нужен PHP-слой (например, adminer/phpMyAdmin для управления БД) — установите phpMyAdmin в отдельный сайт IIS, он подключится к той же MySQL по тем же креденшелам.
+</details>
 
 ---
 
-## 7. Сайт IIS + reverse proxy на Node
+## 6. Схема базы данных
+
+Единственная актуальная схема — **MySQL 8**: `server-php/database/schema.mysql.sql` (создаёт БД `svdrivers`, таблицы `users`, `auth_tokens`, `weekly_reports`, `audit_log` и индексы/FK). Применяется командой из п. 4.3; вручную:
+
+```bat
+mysql -u root -p < server-php\database\schema.mysql.sql
+```
+
+Файл `supabase/schema.postgres.sql` — историческая PostgreSQL-версия, для деплоя не используется. phpMyAdmin/Adminer (по желанию) подключается к той же MySQL по тем же креденшелам.
+
+---
+
+## 7. Сайт IIS + маршрутизация `/api/*` в PHP
 
 1. IIS Manager → **Sites → Add Website**:
    - Site name: `SVdrivers`
-   - Physical path: `C:\inetpub\svdrivers-web`
+   - Physical path: `C:\inetpub\svdrivers-web` (внутри — файлы из `dist\` и папка `server-php\`)
    - Port: `8080` (чтобы не конфликтовать с Default Web Site на :80)
-2. Пул приложения: `SVdrivers`, .NET CLR — No Managed Code.
-3. **SPA-fallback и прокси API.** Отредактируйте `C:\inetpub\svdrivers-web\web.config`:
+2. Пул приложения: `SVdrivers`, .NET CLR — No Managed Code. Убедитесь, что обработчик `*.php` (FastCgiModule) назначен на этот сайт (раздел 2.1, шаг 6).
+3. Создайте `C:\inetpub\svdrivers-web\web.config`:
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -192,10 +225,10 @@ C:\svdrivers-api\bin\nssm start SVdriversAPI
     </staticContent>
     <rewrite>
       <rules>
-        <!-- 1. /api/* -> Node.js (localhost:4000) -->
-        <rule name="Proxy API to Node" stopProcessing="true">
-          <match url="^api/(.*)" />
-          <action type="Rewrite" url="http://localhost:4000/api/{R:1}" />
+        <!-- 1. /api/* -> PHP (server-php/index.php) -->
+        <rule name="API to PHP" stopProcessing="true">
+          <match url="^api/(.*)$" />
+          <action type="Rewrite" url="/server-php/index.php" />
         </rule>
         <!-- 2. Всё остальное -> index.html (SPA routing) -->
         <rule name="SPA fallback" stopProcessing="true">
@@ -212,17 +245,21 @@ C:\svdrivers-api\bin\nssm start SVdriversAPI
 </configuration>
 ```
 
-4. Фронтенд обращается к `/api/...` относительно своего адреса — при проксировании через IIS ничего дополнительно настраивать не нужно.
+Как это работает: URL Rewrite переписывает любой `/api/...` на `/server-php/index.php`; дальше за обработку отвечает сам `index.php` — он берёт путь из `REQUEST_URI` (поддерживается и деплой в виртуальный каталог вида `/SVdrivers/api/...`), матчит роуты (`/auth/*`, `/users*`, `/reports*`, `/me`, `/health`) и отдаёт JSON. Поэтому правило #1 сознательно всегда указывает на `index.php`, а не сохраняет хвост пути.
+
+4. Фронтенд обращается к `/api/...` относительно своего адреса — ничего дополнительно настраивать не нужно.
+
+> Альтернатива без правки web.config: создать «виртуальное приложение» `/api` на папку `server-php` (в этом случае внутри `server-php` положите свой `web.config` с правилом `.*` → `index.php`). Вариант с одним сайтом проще и уже протестирован.
 
 ---
 
 ## 8. Проверка после деплоя
 
-1. `http://localhost:8080/` → страница входа SVdrivers.
-2. Вход под учёткой сида → создание пользователя (админ), письмо с ссылкой регистрации, принудительная смена пароля при первом входе.
-3. `http://localhost:8080/api/health` → JSON (значит прокси работает).
+1. `http://localhost:8080/api/health` → `{"ok":true,"service":"svdrivers-api-php"}` (значит PHP + маршрутизация работают).
+2. `http://localhost:8080/` → страница входа SVdrivers.
+3. Вход под учёткой сида (admin@svdrivers.ru) → создание пользователя (админ), письмо с ссылкой регистрации, принудительная смена пароля при первом входе.
 4. Обновление страницы на внутреннем роуте (F5) → не 404 (значит SPA-fallback работает).
-5. Сброс пароля по почте → ссылка ведёт на `APP_BASE_URL`.
+5. Сброс пароля по почте: при ненастроенном SMTP письмо появится в `server-php\data\outbox\` и в `GET /api/dev/outbox` (под админом); ссылка ведёт на `PUBLIC_APP_URL`.
 
 ---
 
@@ -230,19 +267,19 @@ C:\svdrivers-api\bin\nssm start SVdriversAPI
 
 | Симптом | Причина / решение |
 |---|---|
-| 502.5 / пустой ответ на `/api/*` | ARR не включён (Server Proxy Settings) или служба SVdriversAPI не запущена |
-| 404 на F5 внутри приложения | Нет `web.config` с SPA-fallback или URL Rewrite не установлен |
-| `better-sqlite3` не собирается | Нужны Python 3 + VS Build Tools (C++); либо переход на MySQL (раздел 6) |
-| Письма не уходят | Проверьте `SMTP_*` (для Gmail/Yandex — только «пароль приложения»), порт 465/587, антивирус не блокирует исходящие |
+| 500 на `/api/*`, пустое тело | Включите вывод ошибок PHP (`display_errors=1` временно) и смотрите `error.log` пула (`%SystemDrive%\inetpub\temp\PHP FastCGI Errors` / event viewer). Чаще всего: неверные креденшалы MySQL или не запущен сервис `mysqld` |
+| 404 на `/api/health` | Не установлен URL Rewrite, нет `web.config` в веб-корне, или папка `server-php` не скопирована в сайт |
+| «Access denied» / IIS 5.x ошибка на *.php | Обработчик FastCgiModule не назначен на сайт (раздел 2.1, шаг 6) или путь к `php-cgi.exe` неверный |
+| Ошибка подключения к БД в логах | Проверьте `local-config.php` / env-переменные; пользователь `svdrivers` должен иметь доступ к БД `svdrivers` с `localhost`; раскомментируйте `extension=pdo_mysql` в `php.ini` |
+| Письма не уходят | Проверьте `SMTP_*` (для Gmail/Yandex — только «пароль приложения»), порт 465/587, исходящие не блокируются антивирусом. Без SMTP письма копятся в `data\outbox` |
 | Старый контент после обновления | Очистите кэш браузера (Ctrl+F5); при необходимости добавьте заголовки `Cache-Control` для `index.html` |
 | Ошибка React #310 | Не делайте conditional hooks; пересоберите `npm run build:iis` и обновите `dist` |
-| Права на `C:\svdrivers-data` | Выдайте `IIS_IUSRS`/`NETWORK SERVICE` Modify на каталог данных SQLite (WAL требует записи) |
+| Нет прав на запись в `server-php\data` | Выдайте `IIS_IUSRS` Modify на каталог (нужен для outbox-писем) |
 
 ---
 
 ## 10. Резервное копирование
 
-- SQLite: останавливать службу не обязательно (WAL), но надёжнее копировать снапшот:
-  `copy C:\svdrivers-data\svdrivers.db* E:\backup\` (по планировщику задач).
-- MySQL: `mysqldump -u svdrivers -p svdrivers > backup.sql` по планировщику.
-- Обязательно бекапьте `JWT_SECRET` и конфиги — без них токены/сессии будут инвалидны.
+- MySQL: `mysqldump -u svdrivers -p svdrivers > backup.sql` по планировщику задач Windows.
+- Обязательно бекапьте `server-php\config\local-config.php` (`JWT_SECRET`, `TOKEN_PEPPER`) — без них токены/сессии и хэши одноразовых токенов будут инвалидны, ссылки сброса пароля перестанут работать.
+- Папку `server-php\data\outbox` бекапить не нужно (это лишь журнал неотправленных писем на время разработки).

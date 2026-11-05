@@ -22,14 +22,25 @@ set_exception_handler(function (Throwable $e): void {
 
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 $uri = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
-// Поддержка деплоя в виртуальный каталог IIS: /SVdrivers/api/... -> /api/...
-if (preg_match('#(/api(?:/.*|))$#', $uri, $m)) $uri = $m[1];
+
+// Восстанавливаем «логический» путь /api/... независимо от формы URL:
+//  - IIS (URL Rewrite): /api/auth/login -> index.php, но REQUEST_URI сохраняет /api/...
+//  - прямой вызов скрипта с PATH_INFO: /server-php/index.php/api/auth/login (dev-тесты, Apache)
+//  - деплой в виртуальный каталог: /SVdrivers/api/auth/login
+if (!preg_match('#(/api(?:/.*|))$#', $uri, $m)) {
+    // Внутренний redirect (IIS URL Rewrite) может подменить REQUEST_URI на путь скрипта —
+    // тогда путь запроса лежит в ORIGINAL_REQUEST_URI или ORIG_PATH_INFO.
+    foreach (['ORIGINAL_REQUEST_URI', 'ORIG_PATH_INFO', 'REDIRECT_URL'] as $alt) {
+        if (!empty($_SERVER[$alt]) && preg_match('#(/api(?:/.*|))$#', (string)$_SERVER[$alt], $m2)) {
+            $uri = $m2[1];
+            break;
+        }
+    }
+}
+if (!$m) json_out(404, ['error' => 'Not found']);
+$uri = $m[1];
 
 $path = rtrim((string)substr($uri, strlen('/api')), '/'); // '', '/auth/login', '/users/3/reset-password'...
-
-if (!str_starts_with($uri, '/api')) {
-    json_out(404, ['error' => 'Not found']);
-}
 
 try {
     if ($path === '' || $path === '/health') {
