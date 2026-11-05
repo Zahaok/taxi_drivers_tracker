@@ -24,21 +24,41 @@ $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 $uri = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
 
 // Восстанавливаем «логический» путь /api/... независимо от формы URL:
-//  - IIS (URL Rewrite): /api/auth/login -> index.php, но REQUEST_URI сохраняет /api/...
+//  - IIS (URL Rewrite): /api/auth/login -> index.php; REQUEST_URI обычно сохраняет /api/...,
+//    но при некоторых настройках подменяется путём скрипта — тогда путь лежит в
+//    ORIGINAL_REQUEST_URI / ORIG_PATH_INFO / REDIRECT_URL (их ставит URL Rewrite).
 //  - прямой вызов скрипта с PATH_INFO: /server-php/index.php/api/auth/login (dev-тесты, Apache)
 //  - деплой в виртуальный каталог: /SVdrivers/api/auth/login
-if (!preg_match('#(/api(?:/.*|))$#', $uri, $m)) {
-    // Внутренний redirect (IIS URL Rewrite) может подменить REQUEST_URI на путь скрипта —
-    // тогда путь запроса лежит в ORIGINAL_REQUEST_URI или ORIG_PATH_INFO.
-    foreach (['ORIGINAL_REQUEST_URI', 'ORIG_PATH_INFO', 'REDIRECT_URL'] as $alt) {
-        if (!empty($_SERVER[$alt]) && preg_match('#(/api(?:/.*|))$#', (string)$_SERVER[$alt], $m2)) {
-            $uri = $m2[1];
-            break;
+function extract_api_path(): ?string {
+    $candidates = [
+        parse_url((string)($_SERVER['REQUEST_URI'] ?? ''), PHP_URL_PATH),
+        isset($_SERVER['ORIGINAL_REQUEST_URI'])
+            ? parse_url((string)$_SERVER['ORIGINAL_REQUEST_URI'], PHP_URL_PATH) : null,
+        $_SERVER['ORIG_PATH_INFO'] ?? null,   // IIS FastCGI + URL Rewrite redirect
+        $_SERVER['PATH_INFO'] ?? null,        // /server-php/index.php/api/auth/login
+        $_SERVER['REDIRECT_URL'] ?? null,     // URL Rewrite внутреннего redirect
+    ];
+    foreach ($candidates as $c) {
+        if (is_string($c) && preg_match('#(^|/)api(/.*)?$#', $c, $m)) {
+            return '/api' . ($m[2] ?? '');   // '/api', '/api/auth/login', ...
         }
     }
+    return null;
 }
-if (!$m) json_out(404, ['error' => 'Not found']);
-$uri = $m[1];
+
+$uri = extract_api_path();
+if ($uri === null) {
+    json_out(404, [
+        'error' => 'API route not found. Проверьте web.config: правило ^api/(.*) -> /server-php/index.php '
+            . 'и наличие папки server-php в веб-корне сайта (DEPLOY-IIS.md, раздел 7).',
+        'debug' => [
+            'request_uri'    => $_SERVER['REQUEST_URI'] ?? null,
+            'script_name'    => $_SERVER['SCRIPT_NAME'] ?? null,
+            'path_info'      => $_SERVER['PATH_INFO'] ?? null,
+            'orig_path_info' => $_SERVER['ORIG_PATH_INFO'] ?? null,
+        ],
+    ]);
+}
 
 $path = rtrim((string)substr($uri, strlen('/api')), '/'); // '', '/auth/login', '/users/3/reset-password'...
 

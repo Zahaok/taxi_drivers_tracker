@@ -1,28 +1,33 @@
-// Клиент REST API SVdrivers (Express + SQLite).
+// Клиент REST API SVdrivers (PHP-бэкенд server-php/ в проде, Express+SQLite в dev).
 // В dev-режиме запросы проксируются Vite на http://localhost:4000 (см. vite.config.js),
-// в прод-режиме статика и API раздаются с одного порта — путь тот же.
+// в прод-режиме статика и API раздаются с одного сайта IIS — правило ^api/(.*)
+// в web.config переписывает их на /server-php/index.php.
 export const TOKEN_KEY = 'sv_session_token';
 
-// Относительный путь '/api/...' разрешается браузером ОТНОСИТЕЛЬНО текущей страницы.
-// При деплое в виртуальный каталог IIS (например http://host/SVdrivers/index.html)
-// это ломает запросы. Поэтому строим абсолютный URL от корня сайта (origin).
-// Переопределяется через window.SVDRIVERS_API_BASE (задаётся в web.config / index.html при need).
+// Базовый путь API относительно КОРНЯ сайта. По умолчанию '/api' — как в DEPLOY-IIS.md.
+// Если сайт задеплоен в виртуальный каталог IIS (http://host/SVdrivers/), задайте
+// window.SVDRIVERS_API_BASE = '/SVdrivers/api' в index.html до загрузки main.js.
+const DEFAULT_API_BASE = '/api';
+
 function apiUrl(path: string): string {
-  const base = (window as any)?.SVDRIVERS_API_BASE; // например 'http://host:4000' или '/sv-api'
   if (!path.startsWith('/api')) return path;
-  if (typeof base === 'string' && base) return base.replace(/\/+$/, '') + path;
-  return new URL(path, window.location.origin).pathname; // всегда от корня origin
+  const raw = (window as any)?.SVDRIVERS_API_BASE; // например '/SVdrivers/api' или 'http://host:4000/api'
+  const base = typeof raw === 'string' && raw.trim() ? raw.trim().replace(/\/+$/, '') : DEFAULT_API_BASE;
+  // Всегда строим абсолютный URL от origin — иначе относительный путь «съедет»
+  // при нахождении страницы не в корне (виртуальный каталог, внутренний роут SPA).
+  return new URL(base + path.slice('/api'.length), window.location.origin).pathname;
 }
 
 async function request<T>(path: string, options: RequestInit = {}, token?: string | null): Promise<T> {
+  const url = apiUrl(path);
   const headers: Record<string, string> = { 'Content-Type': 'application/json', ...(options.headers as any || {}) };
   const authHeader = token !== undefined ? token : localStorage.getItem(TOKEN_KEY);
   if (authHeader) headers['Authorization'] = `Bearer ${authHeader}`;
-  const res = await fetch(apiUrl(path), { ...options, headers }).catch(() => null);
+  const res = await fetch(url, { ...options, headers }).catch(() => null);
   // Бэкенд недоступен (например, при статическом деплое только dist/ на IIS без API-сервера):
   // отдаём структурированную ошибку вместо необработанного исключения.
   if (res === null) {
-    const err: any = new Error('Сервер SVdrivers недоступен. Проверьте, что запущен backend (node server/index.js) или настроен прокси /api в IIS.');
+    const err: any = new Error('Сервер SVdrivers недоступен. Проверьте, что PHP-бэкенд (server-php/) скопирован в веб-корень IIS и настроено правило /api/* в web.config (см. DEPLOY-IIS.md, раздел 7).');
     err.status = 0;
     throw err;
   }
@@ -31,7 +36,7 @@ async function request<T>(path: string, options: RequestInit = {}, token?: strin
   if (!res.ok) {
     // Статика с IIS может вернуть index.html вместо JSON (SPA fallback) — приводим к понятной ошибке
     if (res.status === 404 || res.status === 405) {
-      const err: any = new Error(`API-эндпоинт не найден (${res.status}). Убедитесь, что запросы /api/* проксируются на backend.`);
+      const err: any = new Error(`API-эндпоинт не найден (${res.status}): ${url}. Убедитесь, что запросы /api/* переписываются правилом «API to PHP» в web.config на /server-php/index.php (DEPLOY-IIS.md, раздел 7).`);
       err.status = res.status;
       throw err;
     }
