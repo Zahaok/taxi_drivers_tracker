@@ -95,8 +95,10 @@ FLUSH PRIVILEGES;
 
 ```bat
 npm ci
-npm run build -- --config vite.config.prod.js
+npm run build:iis
 ```
+
+> ⚠️ Не используйте команду вида `npm run build -- --config vite.config.prod.js` — в Windows через npm extra-аргументы могут передаваться в Vite одной группой, из-за чего Vite воспринимает файл конфигурации как директорию и падает с ошибкой `Could not resolve entry module "vite.config.prod.js/index.html"`. В package.json добавлен готовый скрипт `build:iis`, который вызывает `vite build --config vite.config.prod.js` напрямую.
 
 > `vite.config.prod.js` использует `base: "./"` — ассеты идут по относительным путям, билд работает из любого виртуального каталога IIS.
 
@@ -233,7 +235,7 @@ C:\svdrivers-api\bin\nssm start SVdriversAPI
 | `better-sqlite3` не собирается | Нужны Python 3 + VS Build Tools (C++); либо переход на MySQL (раздел 6) |
 | Письма не уходят | Проверьте `SMTP_*` (для Gmail/Yandex — только «пароль приложения»), порт 465/587, антивирус не блокирует исходящие |
 | Старый контент после обновления | Очистите кэш браузера (Ctrl+F5); при необходимости добавьте заголовки `Cache-Control` для `index.html` |
-| Ошибка React #310 | Не делайте conditional hooks; пересоберите `npm run build -- --config vite.config.prod.js` и обновите `dist` |
+| Ошибка React #310 | Не делайте conditional hooks; пересоберите `npm run build:iis` и обновите `dist` |
 | Права на `C:\svdrivers-data` | Выдайте `IIS_IUSRS`/`NETWORK SERVICE` Modify на каталог данных SQLite (WAL требует записи) |
 
 ---
