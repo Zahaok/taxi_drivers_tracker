@@ -1,4 +1,5 @@
-import { getWheelyBreakdown, roundRubles } from './wheely';
+import { getWheelyBreakdown } from './wheely';
+import { roundRubles, num } from './money';
 import { getYandexBreakdown } from './yandex';
 import { getOwnRentBreakdown } from './ownRent';
 import { hourlyRentRate } from './settings';
@@ -22,50 +23,9 @@ export interface PayoutInput {
   zsdPayout: number;           // ЗСД (- из суммы к выплате, корректировки к выплатам)
 }
 
-export function calculateDriverPayout(input: PayoutInput): number;
-// Совместимость со старым позиционным вызовом
-export function calculateDriverPayout(
-  wheelyGross: number,
-  yandexGross: number,
-  ownRentGross: number,
-  hourlyRentHours: number,
-  compensations: number,
-  bonuses: number,
-  deductions: number
-): number;
-export function calculateDriverPayout(
-  arg: PayoutInput | number,
-  yandexGross?: number,
-  ownRentGross?: number,
-  hourlyRentHours?: number,
-  compensations?: number,
-  bonuses?: number,
-  deductions?: number
-): number {
-  let p: PayoutInput;
-  if (typeof arg === 'object') {
-    p = arg;
-  } else {
-    p = {
-      wheelyGross: arg,
-      wheelyAgentFee: 0,
-      wheelyAirportParking: 0,
-      soberDriver: 0,
-      wheelyTips: 0,
-      yandexGross: yandexGross ?? 0,
-      yandexTips: 0,
-      zsd: 0,
-      ownRentGross: ownRentGross ?? 0,
-      zsdOwnRent: 0,
-      hourlyRentHours: hourlyRentHours ?? 0,
-      compensations: compensations ?? 0,
-      bonuses: bonuses ?? 0,
-      adjustmentBonuses: 0,
-      fines: deductions ?? 0, // старый параметр «вычеты» трактуем как штрафы
-      zsdPayout: 0,
-    };
-  }
-
+// Итоговая сумма к выплате водителю за неделю.
+// Единственный контракт — объект PayoutInput (см. also utils/wheely.toPayoutInput для нормализации «сырого» отчёта).
+export function calculateDriverPayout(p: PayoutInput): number {
   // Сумма к выплате по Wheely: (общий − агентское − парковка − трезвый водитель) × 30% + бонусы.
   // Бонусы прибавляются к уже вычтенным 30% водителя и НЕ участвуют в распределении 30/70.
   const sober = p.soberDriver ?? 0;
@@ -105,7 +65,7 @@ export function effectiveZsdPayout(zsdYandex: number, zsdOwnRent: number, manual
   if (manualOverride !== undefined && manualOverride !== '' && Number.isFinite(Number(manualOverride))) {
     return Number(manualOverride);
   }
-  return (Number.isFinite(zsdYandex) ? zsdYandex : 0) + (Number.isFinite(zsdOwnRent) ? zsdOwnRent : 0);
+  return num(zsdYandex) + num(zsdOwnRent);
 }
 
 export function getWeekNumber(date: Date): number {
@@ -168,7 +128,7 @@ function csvEscape(value: unknown): string {
 }
 
 export function hashPassword(password: string): string {
-  // Simple hash for demo (in real PHP app, use password_hash)
+  // TODO: демо-хэш для localStorage-версии. В боевом бэкенде используется bcrypt (server/index.js).
   let hash = 0;
   for (let i = 0; i < password.length; i++) {
     const char = password.charCodeAt(i);

@@ -1,6 +1,6 @@
 // SVdrivers — слой персистентности (SQLite через better-sqlite3).
 // Схема легко портируется на PostgreSQL/Supabase: те же имена таблиц/колонок,
-// вместо ? подставляются $1..$n (см. supabase/schema.sql).
+// вместо ? подставляются $1..$n (см. supabase/schema.postgres.sql).
 import Database from 'better-sqlite3';
 import path from 'node:path';
 import fs from 'node:fs';

@@ -35,7 +35,6 @@ export interface WeeklyReport {
   adjustmentBonuses?: number; // бонусы в корректировках к выплатам (+ к итоговой сумме к выплате)
   fines: number;              // штрафы (- из суммы к выплате)
   zsdPayout: number;          // ЗСД (- из суммы к выплате, корректировки к выплатам)
-  deductions?: number;        // устарело (вычеты) — не используется в новом расчёте
   total_driver_payout: number;
   comment?: string;           // комментарий к сумме к выплате (произвольный текст)
   created_at: string;

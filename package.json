@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:iis": "vite build --config vite.config.prod.js",
     "typecheck": "tsc --noEmit",
     "server": "node server/index.js",
     "dev:all": "concurrently -n api,web -c blue,green \"node server/index.js\" \"vite\"",

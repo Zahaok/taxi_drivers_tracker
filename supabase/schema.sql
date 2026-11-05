@@ -1,61 +1,79 @@
--- SVdrivers: эталонная схема для PostgreSQL / Supabase (порт с SQLite-версии server/db.js).
--- Пароли — только bcrypt-хэши. Plaintext не хранится нигде.
-create table if not exists users (
-  id uuid primary key default gen_random_uuid(),
-  username text not null,
-  email text not null unique,
-  password_hash text not null,            -- bcrypt($10)
-  role text not null check (role in ('driver','manager','admin')),
-  must_change_password boolean not null default false,
-  created_at timestamptz not null default now(),
-  last_login_at timestamptz
-);
+-- ============================================================
+-- SVdrivers — эталонная схема MySQL 8 (порт с PostgreSQL/Supabase-версии;
+-- исходный PostgreSQL-вариант сохранён в schema.postgres.sql).
+-- Импорт: mysql -u root -p < supabase/schema.sql
+-- Пароли — только bcrypt-хэши ($2y$). Plaintext не хранится нигде.
+-- Примечание: RLS (политики Supabase) в MySQL отсутствуют — контроль доступа
+-- обеспечивает бэкенд (server-php): driver видит только свои отчёты,
+-- manager/admin — все.
+-- ============================================================
 
-create table if not exists auth_tokens (
-  token text primary key,                 -- sha256(pepper + raw_token), сырые токены не храним
-  user_id uuid not null references users(id) on delete cascade,
-  kind text not null check (kind in ('registration','reset')),
-  expires_at timestamptz not null,
-  used_at timestamptz,
-  created_at timestamptz not null default now()
-);
-create index if not exists idx_tokens_user on auth_tokens(user_id);
+CREATE DATABASE IF NOT EXISTS svdrivers
+  CHARACTER SET utf8mb4
+  COLLATE utf8mb4_unicode_ci;
+USE svdrivers;
 
-create table if not exists weekly_reports (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references users(id) on delete cascade,
-  year int not null,
-  week_number int not null,
-  grnz text,
-  mileage numeric,
-  car text,
-  wheely_gross numeric not null default 0,
-  wheely_agent_fee numeric not null default 0,
-  wheely_airport_parking numeric not null default 0,
-  sober_driver numeric not null default 0,
-  wheely_tips numeric not null default 0,
-  yandex_gross numeric not null default 0,
-  yandex_tips numeric not null default 0,
-  zsd numeric not null default 0,
-  own_rent_gross numeric not null default 0,
-  zsd_own_rent numeric not null default 0,
-  hourly_rent_hours numeric not null default 0,
-  compensations numeric not null default 0,
-  bonuses numeric not null default 0,
-  adjustment_bonuses numeric not null default 0,
-  fines numeric not null default 0,
-  zsd_payout numeric not null default 0,
-  total_driver_payout numeric not null default 0,
-  comment text,
-  edited_by_admin boolean not null default false,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  unique (user_id, year, week_number)
-);
+-- Пользователи
+CREATE TABLE IF NOT EXISTS users (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  username VARCHAR(191) NOT NULL,
+  email VARCHAR(191) NOT NULL UNIQUE,             -- регистронезависимый collate (аналог citext/NOCASE)
+  password_hash VARCHAR(255) NOT NULL,            -- bcrypt($2y$10) / password_hash()
+  role ENUM('driver','manager','admin') NOT NULL DEFAULT 'driver',
+  must_change_password TINYINT(1) NOT NULL DEFAULT 0,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  last_login_at TIMESTAMP NULL DEFAULT NULL,
+  INDEX idx_users_role (role)
+) ENGINE=InnoDB;
 
--- RLS для Supabase: водитель видит только свои отчёты, менеджер/админ — все
-alter table weekly_reports enable row level security;
-create policy "own reports" on weekly_reports for all
-  using (auth.uid() = user_id or exists (
-    select 1 from users u where u.id = auth.uid() and u.role in ('manager','admin')
-  ));
+-- Одноразовые токены активации/сброса
+-- (хранится sha256(pepper + raw_token), сырые токены — никогда)
+CREATE TABLE IF NOT EXISTS auth_tokens (
+  token CHAR(64) PRIMARY KEY,
+  user_id INT NOT NULL,
+  kind ENUM('registration','reset') NOT NULL,
+  expires_at TIMESTAMP NOT NULL,
+  used_at TIMESTAMP NULL DEFAULT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_tokens_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  INDEX idx_tokens_user (user_id)
+) ENGINE=InnoDB;
+
+-- Недельные отчёты водителей
+CREATE TABLE IF NOT EXISTS weekly_reports (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NOT NULL,
+  year SMALLINT NOT NULL,
+  week_number TINYINT NOT NULL,
+  grnz VARCHAR(32) NULL,
+  mileage DECIMAL(12,2) NOT NULL DEFAULT 0,
+  car VARCHAR(191) NULL,
+  wheely_gross DECIMAL(12,2) NOT NULL DEFAULT 0,
+  wheely_agent_fee DECIMAL(12,2) NOT NULL DEFAULT 0,
+  wheely_airport_parking DECIMAL(12,2) NOT NULL DEFAULT 0,
+  sober_driver DECIMAL(12,2) NOT NULL DEFAULT 0,
+  wheely_tips DECIMAL(12,2) NOT NULL DEFAULT 0,
+  yandex_gross DECIMAL(12,2) NOT NULL DEFAULT 0,
+  yandex_tips DECIMAL(12,2) NOT NULL DEFAULT 0,
+  zsd DECIMAL(12,2) NOT NULL DEFAULT 0,
+  own_rent_gross DECIMAL(12,2) NOT NULL DEFAULT 0,
+  zsd_own_rent DECIMAL(12,2) NOT NULL DEFAULT 0,
+  hourly_rent_hours DECIMAL(8,2) NOT NULL DEFAULT 0,
+  compensations DECIMAL(12,2) NOT NULL DEFAULT 0,
+  bonuses DECIMAL(12,2) NOT NULL DEFAULT 0,
+  adjustment_bonuses DECIMAL(12,2) NOT NULL DEFAULT 0,
+  fines DECIMAL(12,2) NOT NULL DEFAULT 0,
+  zsd_payout DECIMAL(12,2) NOT NULL DEFAULT 0,
+  total_driver_payout DECIMAL(12,2) NOT NULL DEFAULT 0,
+  comment TEXT NULL,
+  edited_by_admin TINYINT(1) NOT NULL DEFAULT 0,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uniq_user_year_week (user_id, year, week_number),
+  CONSTRAINT fk_reports_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  INDEX idx_reports_user_year (user_id, year),
+  INDEX idx_reports_year_week (year, week_number)
+) ENGINE=InnoDB;
+
+-- Демо-аккаунты создаются сидом: php server-php/database/seed.php
+-- (пароли: Admin2026! / Manager2026! / Driver2026!)

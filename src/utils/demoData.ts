@@ -1,67 +1,54 @@
 import { WeeklyReport } from '../types';
-import { calculateDriverPayout } from './calculations';
+import { calculateDriverPayout, generateId } from './calculations';
+import { toPayoutInput } from './wheely';
+
+// Вспомогательный генератор случайных демо-сумм: с вероятностью p — значение
+// в диапазоне [min, max], иначе 0 (имитация «незаполненности» поля).
+const maybe = (p: number, min: number, range: number) =>
+  Math.random() > p ? Math.floor(min + Math.random() * range) : 0;
+const between = (min: number, range: number) => min + Math.random() * range;
 
 export function generateDemoData(): Partial<WeeklyReport>[] {
   const now = new Date();
   const year = now.getFullYear();
   const currentWeek = Math.ceil(((now.getTime() - new Date(year, 0, 1).getTime()) / 86400000 + 1) / 7);
 
+  // Профили демо-водителей: id, ГРНЗ, авто и диапазоны сумм (база + размах).
+  const drivers = [
+    { user_id: 'driver_1', grnz: 'Х571ТК 799', car: 'Kia Rio',
+      wheely: [30000, 20000] as const, yandex: [25000, 15000] as const, rent: [15000, 10000] as const, mileage: [1800, 900] as const },
+    { user_id: 'driver_2', grnz: 'У342МН 750', car: 'Hyundai Solaris',
+      wheely: [25000, 18000] as const, yandex: [20000, 12000] as const, rent: [10000, 8000] as const, mileage: [1500, 800] as const },
+  ];
+
   const reports: Partial<WeeklyReport>[] = [];
-
-  // Generate 8 weeks of data for driver_1
-  for (let w = Math.max(1, currentWeek - 7); w <= currentWeek; w++) {
-    reports.push({
-      user_id: 'driver_1',
-      year,
-      week_number: w,
-      grnz: 'Х571ТК 799',
-      car: 'Kia Rio',
-      mileage: Math.floor(1800 + Math.random() * 900),
-      wheely_gross: 30000 + Math.random() * 20000,
-      wheely_agent_fee: Math.random() > 0.4 ? Math.floor(Math.random() * 1500) : 0,
-      wheely_airport_parking: Math.random() > 0.5 ? Math.floor(Math.random() * 900) : 0,
-      sober_driver: Math.random() > 0.7 ? Math.floor(500 + Math.random() * 1500) : 0,
-      wheely_tips: Math.random() > 0.4 ? Math.floor(Math.random() * 1500) : 0,
-      yandex_gross: 25000 + Math.random() * 15000,
-      yandex_tips: Math.random() > 0.4 ? Math.floor(Math.random() * 1800) : 0,
-      zsd: Math.random() > 0.3 ? Math.floor(300 + Math.random() * 1200) : 0,
-      own_rent_gross: 15000 + Math.random() * 10000,
-      zsd_own_rent: Math.random() > 0.6 ? Math.floor(200 + Math.random() * 600) : 0,
-      hourly_rent_hours: 20 + Math.floor(Math.random() * 20),
-      compensations: Math.random() > 0.7 ? Math.floor(Math.random() * 3000) : 0,
-      bonuses: Math.random() > 0.5 ? Math.floor(Math.random() * 5000) : 0,
-      adjustmentBonuses: Math.random() > 0.7 ? Math.floor(300 + Math.random() * 1500) : 0,
-      fines: Math.random() > 0.6 ? Math.floor(500 + Math.random() * 2000) : 0,
-      zsdPayout: Math.random() > 0.3 ? Math.floor(300 + Math.random() * 1200) : 0
-    });
-  }
-
-  // Generate 8 weeks of data for driver_2
-  for (let w = Math.max(1, currentWeek - 7); w <= currentWeek; w++) {
-    reports.push({
-      user_id: 'driver_2',
-      year,
-      week_number: w,
-      grnz: 'У342МН 750',
-      car: 'Hyundai Solaris',
-      mileage: Math.floor(1500 + Math.random() * 800),
-      wheely_gross: 25000 + Math.random() * 18000,
-      wheely_agent_fee: Math.random() > 0.5 ? Math.floor(Math.random() * 1200) : 0,
-      wheely_airport_parking: Math.random() > 0.6 ? Math.floor(Math.random() * 800) : 0,
-      sober_driver: Math.random() > 0.75 ? Math.floor(400 + Math.random() * 1200) : 0,
-      wheely_tips: Math.random() > 0.45 ? Math.floor(Math.random() * 1200) : 0,
-      yandex_gross: 20000 + Math.random() * 12000,
-      yandex_tips: Math.random() > 0.5 ? Math.floor(Math.random() * 1500) : 0,
-      zsd: Math.random() > 0.35 ? Math.floor(250 + Math.random() * 1000) : 0,
-      own_rent_gross: 10000 + Math.random() * 8000,
-      zsd_own_rent: Math.random() > 0.65 ? Math.floor(150 + Math.random() * 500) : 0,
-      hourly_rent_hours: 15 + Math.floor(Math.random() * 25),
-      compensations: Math.random() > 0.8 ? Math.floor(Math.random() * 2000) : 0,
-      bonuses: Math.random() > 0.6 ? Math.floor(Math.random() * 3000) : 0,
-      adjustmentBonuses: Math.random() > 0.75 ? Math.floor(200 + Math.random() * 1200) : 0,
-      fines: Math.random() > 0.5 ? Math.floor(400 + Math.random() * 1500) : 0,
-      zsdPayout: Math.random() > 0.35 ? Math.floor(250 + Math.random() * 1000) : 0
-    });
+  for (const d of drivers) {
+    for (let w = Math.max(1, currentWeek - 7); w <= currentWeek; w++) {
+      reports.push({
+        user_id: d.user_id,
+        year,
+        week_number: w,
+        grnz: d.grnz,
+        car: d.car,
+        mileage: Math.floor(between(d.mileage[0], d.mileage[1])),
+        wheely_gross: Math.floor(between(d.wheely[0], d.wheely[1])),
+        wheely_agent_fee: maybe(0.45, 0, 1400),
+        wheely_airport_parking: maybe(0.55, 0, 850),
+        sober_driver: maybe(0.72, 450, 1350),
+        wheely_tips: maybe(0.42, 0, 1350),
+        yandex_gross: Math.floor(between(d.yandex[0], d.yandex[1])),
+        yandex_tips: maybe(0.47, 0, 1650),
+        zsd: maybe(0.32, 250, 1100),
+        own_rent_gross: Math.floor(between(d.rent[0], d.rent[1])),
+        zsd_own_rent: maybe(0.62, 160, 550),
+        hourly_rent_hours: Math.floor(between(16, 22)),
+        compensations: maybe(0.75, 0, 2500),
+        bonuses: maybe(0.55, 0, 4000),
+        adjustmentBonuses: maybe(0.72, 250, 1350),
+        fines: maybe(0.55, 350, 1750),
+        zsdPayout: maybe(0.32, 250, 1100),
+      });
+    }
   }
 
   return reports;
@@ -72,57 +59,21 @@ export function initializeDemoData() {
   const existing = localStorage.getItem(reportsKey);
   if (existing && JSON.parse(existing).length > 0) return;
 
-  const demoReports = generateDemoData();
   const now = new Date().toISOString();
 
-  const fullReports: WeeklyReport[] = demoReports.map(r => {
-    const payoutInput = {
-      wheelyGross: Math.round(r.wheely_gross!),
-      wheelyAgentFee: Math.round(r.wheely_agent_fee ?? 0),
-      wheelyAirportParking: Math.round(r.wheely_airport_parking ?? 0),
-      soberDriver: Math.round(r.sober_driver ?? 0),
-      wheelyTips: Math.round(r.wheely_tips ?? 0),
-      yandexGross: Math.round(r.yandex_gross!),
-      yandexTips: Math.round(r.yandex_tips ?? 0),
-      zsd: Math.round(r.zsd ?? 0),
-      ownRentGross: Math.round(r.own_rent_gross!),
-      zsdOwnRent: Math.round(r.zsd_own_rent ?? 0),
-      hourlyRentHours: r.hourly_rent_hours!,
-      compensations: Math.round(r.compensations!),
-      bonuses: Math.round(r.bonuses!),
-      adjustmentBonuses: Math.round(r.adjustmentBonuses ?? 0),
-      fines: Math.round(r.fines ?? 0),
-      zsdPayout: Math.round((r.zsd ?? 0) + (r.zsd_own_rent ?? 0)) // автоподтяжка ЗСД Яндекс + аренда
-    };
+  const fullReports: WeeklyReport[] = generateDemoData().map(r => {
+    // Округляем исходные демо-суммы до рублей и нормализуем через единый toPayoutInput.
+    const rounded: Partial<WeeklyReport> = Object.fromEntries(
+      Object.entries(r).map(([k, v]) => [k, typeof v === 'number' ? Math.round(v) : v])
+    );
+    const input = toPayoutInput(rounded);
     return {
-      id: Math.random().toString(36).substr(2, 9),
-      user_id: r.user_id!,
-      year: r.year!,
-      week_number: r.week_number!,
-      grnz: r.grnz ?? '',
-      car: r.car ?? '',
-      mileage: Math.round(r.mileage ?? 0),
-      wheely_gross: payoutInput.wheelyGross,
-      wheely_agent_fee: payoutInput.wheelyAgentFee,
-      wheely_airport_parking: payoutInput.wheelyAirportParking,
-      sober_driver: payoutInput.soberDriver,
-      wheely_tips: payoutInput.wheelyTips,
-      yandex_gross: payoutInput.yandexGross,
-      yandex_tips: payoutInput.yandexTips,
-      zsd: payoutInput.zsd,
-      own_rent_gross: payoutInput.ownRentGross,
-      zsd_own_rent: payoutInput.zsdOwnRent,
-      hourly_rent_hours: payoutInput.hourlyRentHours,
-      compensations: payoutInput.compensations,
-      bonuses: payoutInput.bonuses,
-      adjustmentBonuses: payoutInput.adjustmentBonuses,
-      fines: payoutInput.fines,
-      zsdPayout: payoutInput.zsdPayout,
-      total_driver_payout: Math.round(calculateDriverPayout(payoutInput)),
-      comment: '',
+      ...rounded,
+      id: generateId(),
       created_at: now,
-      updated_at: now
-    };
+      updated_at: now,
+      total_driver_payout: calculateDriverPayout(input),
+    } as WeeklyReport;
   });
 
   localStorage.setItem(reportsKey, JSON.stringify(fullReports));
