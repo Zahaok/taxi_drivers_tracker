@@ -76,11 +76,9 @@ export const api = {
     post<{ ok: boolean; message: string }>('/api/auth/forgot-password', { email }),
 
   tokenInfo: (token: string) =>
-    // GET с query-параметром; если IIS/URL Rewrite его потеряет, сервер примет токен и в теле запроса
-    request<{ kind: 'registration' | 'reset' }>('/api/auth/token-info?token=' + encodeURIComponent(token), {
-      method: 'GET',
-      body: JSON.stringify({ token }),
-    }),
+    // POST вместо GET: GET с телом отклоняется некоторыми конфигурациями IIS (400/405),
+    // а fetch в ряде браузеров не отправляет тело у GET-запросов.
+    post<{ kind: 'registration' | 'reset' }>('/api/auth/token-info', { token }),
 
   resetPassword: (token: string, new_password: string) =>
     post<{ ok: boolean }>('/api/auth/reset-password', { token, new_password }),

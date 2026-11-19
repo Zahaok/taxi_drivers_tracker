@@ -52,13 +52,16 @@ function route_auth(string $method, string $path): void
         json_out(200, ['ok' => true, 'message' => 'Если email зарегистрирован — на него отправлено письмо со ссылкой для смены пароля']);
     }
 
-    // GET /api/auth/token-info?token=... (публичная проверка токена для отображения формы)
-    if ($path === 'token-info' && $method === 'GET') {
-        // Токен может прийти и в теле GET-запроса (некоторые браузеры/прокси обрезают query)
-        $t = trim((string)($_GET['token'] ?? ''));
-        if ($t === '') {
-            $bt = body(true);
+    // POST /api/auth/token-info  (токен в JSON-теле; поддержка GET ?token=... оставлена
+    // для совместимости со старыми сборками фронтенда)
+    if ($path === 'token-info' && ($method === 'POST' || $method === 'GET')) {
+        $t = '';
+        if ($method === 'POST') {
+            $bt = body();
             $t = trim((string)($bt['token'] ?? ''));
+        }
+        if ($t === '') {
+            $t = trim((string)($_GET['token'] ?? ''));
         }
         if ($t === '') bad('Не передан токен (query parameter "token")');
         $rec = TokensRepo::find(TokensRepo::hash($t));
