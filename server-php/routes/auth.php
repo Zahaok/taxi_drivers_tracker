@@ -54,9 +54,21 @@ function route_auth(string $method, string $path): void
 
     // GET /api/auth/token-info?token=... (публичная проверка токена для отображения формы)
     if ($path === 'token-info' && $method === 'GET') {
-        $t = (string)($_GET['token'] ?? '');
-        $rec = $t !== '' ? TokensRepo::validToken($t) : null;
-        if (!$rec) bad('Ссылка недействительна или истекла');
+        // Токен может прийти и в теле GET-запроса (некоторые браузеры/прокси обрезают query)
+        $t = trim((string)($_GET['token'] ?? ''));
+        if ($t === '') {
+            $bt = body(true);
+            $t = trim((string)($bt['token'] ?? ''));
+        }
+        if ($t === '') bad('Не передан токен (query parameter "token")');
+        $rec = TokensRepo::find(TokensRepo::hash($t));
+        if (!$rec) {
+            error_log('[svdrivers-php] token-info: токен не найден в auth_tokens (len=' . strlen($t)
+                . ', pepper=' . (($GLOBALS['TOKEN_PEPPER'] ?? '') === 'change-me-too' ? 'DEFAULT!' : 'ok') . ')');
+            bad('Ссылка недействительна или истекла');
+        }
+        if (!empty($rec['used_at'])) bad('Эта ссылка уже использована. Запросите новую.');
+        if (strtotime((string)$rec['expires_at']) < time()) bad('Срок действия ссылки истёк. Запросите новую.');
         json_out(200, ['kind' => $rec['kind']]);
     }
 

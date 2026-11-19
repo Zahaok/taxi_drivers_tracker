@@ -12,8 +12,12 @@ function json_out(int $status, array $data): never
     exit;
 }
 
-function body(): array
+function body(bool $allowAnyMethod = false): array
 {
+    // Только для POST/PUT по умолчанию; GET-запросы с телом — редкость (используется в token-info)
+    if (!$allowAnyMethod && !in_array($_SERVER['REQUEST_METHOD'] ?? '', ['POST', 'PUT', 'PATCH', 'DELETE'], true)) {
+        return [];
+    }
     $raw = file_get_contents('php://input');
     if ($raw === false || $raw === '') return [];
     $d = json_decode($raw, true);
