@@ -25,10 +25,13 @@ class TokensRepo
 
     public static function create(string $rawHashed, int $userId, string $kind): void
     {
+        // Даты считаем на стороне PHP: единая часовая зона с валидацией (strtotime),
+        // формат 'Y-m-d H:i:s' совместим и с MySQL TIMESTAMP, и с sqlite-режимом.
         $ttl = self::ttlMinutes($kind);
+        $expiresAt = date('Y-m-d H:i:s', time() + $ttl * 60);
         Db::run(
-            'INSERT INTO auth_tokens (token, user_id, kind, expires_at) VALUES (?, ?, ?, DATE_ADD(NOW(), INTERVAL ? MINUTE))',
-            [$rawHashed, $userId, $kind, $ttl]
+            'INSERT INTO auth_tokens (token, user_id, kind, expires_at) VALUES (?, ?, ?, ?)',
+            [$rawHashed, $userId, $kind, $expiresAt]
         );
     }
 

@@ -52,11 +52,26 @@ function route_auth(string $method, string $path): void
         json_out(200, ['ok' => true, 'message' => 'Если email зарегистрирован — на него отправлено письмо со ссылкой для смены пароля']);
     }
 
-    // GET /api/auth/token-info?token=... (публичная проверка токена для отображения формы)
-    if ($path === 'token-info' && $method === 'GET') {
-        $t = (string)($_GET['token'] ?? '');
-        $rec = $t !== '' ? TokensRepo::validToken($t) : null;
-        if (!$rec) bad('Ссылка недействительна или истекла');
+    // POST /api/auth/token-info  (токен в JSON-теле; поддержка GET ?token=... оставлена
+    // для совместимости со старыми сборками фронтенда)
+    if ($path === 'token-info' && ($method === 'POST' || $method === 'GET')) {
+        $t = '';
+        if ($method === 'POST') {
+            $bt = body();
+            $t = trim((string)($bt['token'] ?? ''));
+        }
+        if ($t === '') {
+            $t = trim((string)($_GET['token'] ?? ''));
+        }
+        if ($t === '') bad('Не передан токен (query parameter "token")');
+        $rec = TokensRepo::find(TokensRepo::hash($t));
+        if (!$rec) {
+            error_log('[svdrivers-php] token-info: токен не найден в auth_tokens (len=' . strlen($t)
+                . ', pepper=' . (($GLOBALS['TOKEN_PEPPER'] ?? '') === 'change-me-too' ? 'DEFAULT!' : 'ok') . ')');
+            bad('Ссылка недействительна или истекла');
+        }
+        if (!empty($rec['used_at'])) bad('Эта ссылка уже использована. Запросите новую.');
+        if (strtotime((string)$rec['expires_at']) < time()) bad('Срок действия ссылки истёк. Запросите новую.');
         json_out(200, ['kind' => $rec['kind']]);
     }
 
