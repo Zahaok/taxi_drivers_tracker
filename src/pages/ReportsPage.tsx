@@ -544,7 +544,7 @@ function ReportDetailView({ report, driverName, onBack }: { report: WeeklyReport
   const w = getWheelyBreakdown(report);
   const y = getYandexBreakdown(report);
   const o = getOwnRentBreakdown(report);
-  const range = getWeekRange(report.year, report.week_number);
+  const periodLabel = formatPeriodLabel(periodFromReport(report));
   const totalTransfer = y.managerRepayment + o.managerRepayment;
 
   const Row = ({ label, value, tone = 'gray' }: { label: string; value: string; tone?: 'gray' | 'green' | 'red' | 'orange' | 'blue' }) => {
@@ -566,7 +566,7 @@ function ReportDetailView({ report, driverName, onBack }: { report: WeeklyReport
           <button onClick={onBack} className="flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900 mb-1">
             <ArrowLeftRight className="w-4 h-4" /> Назад к списку отчётов
           </button>
-          <h1 className="text-2xl font-bold text-gray-900">Отчёт: {formatDate(range.start)} — {formatDate(range.end)}</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Отчёт: {periodLabel}</h1>
           <p className="text-gray-600 mt-1 text-sm flex flex-wrap items-center gap-x-4 gap-y-1">
             <span className="flex items-center gap-1"><Receipt className="w-4 h-4 text-gray-400" /> Водитель: <b className="text-gray-900">{driverName}</b></span>
             {(report.grnz ?? '') !== '' && (
@@ -664,7 +664,8 @@ function ReportDetailView({ report, driverName, onBack }: { report: WeeklyReport
   );
 }
 
-export default function ReportsPage() {
+export default function ReportsPage({ periodKind = 'weekly' }: { periodKind?: PeriodKind }) {
+  const isDaily = periodKind === 'daily';
   const { user, usersList } = useAuth();
   const { reports, addReport, updateReport, deleteReport, getEditLogsByReport } = useData();
   const [showForm, setShowForm] = useState(false);
@@ -679,15 +680,16 @@ export default function ReportsPage() {
   const drivers = allUsers.filter(u => u.role === 'driver');
 
   const filteredReports = useMemo(() => {
-    let filtered = reports;
+    // Разделяем недельные и дневные отчёты (записи без period считаются недельными)
+    let filtered = reports.filter(r => periodOf(r) === periodKind);
     if (user?.role === 'driver') {
       // Drivers must never see other drivers' reports, even if the filter is changed
       filtered = filtered.filter(r => r.user_id === user.id);
     } else if (selectedDriver !== 'all') {
       filtered = filtered.filter(r => r.user_id === selectedDriver);
     }
-    return [...filtered].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-  }, [reports, user, selectedDriver]);
+    return [...filtered].sort(comparePeriodsDesc);
+  }, [reports, user, selectedDriver, periodKind]);
 
   const handleSave = (data: any) => {
     setError('');
@@ -764,6 +766,7 @@ export default function ReportsPage() {
         <ReportForm
           report={editingReport || undefined}
           userId={editingReport?.user_id || user!.id}
+          periodKind={periodKind}
           onSave={handleSave}
           onCancel={() => { setShowForm(false); setEditingReport(null); }}
         />
@@ -775,8 +778,8 @@ export default function ReportsPage() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Недельные отчёты</h1>
-          <p className="text-gray-600 mt-1 text-sm">Даты соответствуют периодам пн–вс</p>
+          <h1 className="text-2xl font-bold text-gray-900">{isDaily ? 'Ежедневные отчёты' : 'Недельные отчёты'}</h1>
+          <p className="text-gray-600 mt-1 text-sm">{isDaily ? 'Отчёт за один календарный день (логика расчёта как у недельных)' : 'Даты соответствуют периодам пн–вс'}</p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
           {(user?.role === 'manager' || user?.role === 'admin') && (
@@ -829,10 +832,7 @@ export default function ReportsPage() {
                     <div>
                       <div className="flex items-center gap-2">
                         <button type="button" onClick={() => setViewingReport(report)} className="text-gray-900 font-semibold hover:text-amber-600 underline-offset-2 hover:underline transition-colors" title="Открыть отчёт детально">
-                          {(() => {
-                          const range = getWeekRange(report.year, report.week_number);
-                          return `${formatDate(range.start)} — ${formatDate(range.end)}`;
-                        })()}
+                          {formatPeriodLabel(periodFromReport(report))}
                         </button>
                         {user?.role !== 'driver' && driver && (
                           <span className="text-xs px-2 py-0.5 bg-gray-100 rounded-full text-gray-600">

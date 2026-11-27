@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useData } from '../contexts/DataContext';
 import { formatCurrency, formatDateShort, getWeekRange } from '../utils/calculations';
+import { periodFromReport, formatPeriodLabel } from '../utils/period';
 import { getWheelyBreakdown } from '../utils/wheely';
 import { getYandexBreakdown } from '../utils/yandex';
 import { getOwnRentBreakdown } from '../utils/ownRent';
@@ -128,10 +129,7 @@ export default function AnalyticsPage() {
     return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b, 'ru'));
   }, [reports, allUsers, filterYear, filterDriver, user]);
 
-  const periodLabel = (r: any) => {
-    const wr = getWeekRange(r.year, r.week_number);
-    return `${formatDateShort(wr.start)}–${formatDateShort(wr.end)}`;
-  };
+  const periodLabel = (r: any) => formatPeriodLabel(periodFromReport(r));
 
   // Line chart - weekly income dynamics
   useEffect(() => {
