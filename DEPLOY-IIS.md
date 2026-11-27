@@ -228,12 +228,18 @@ mysql -u root -p < server-php\database\schema.mysql.sql
       <remove fileExtension=".woff2" />
       <mimeMap fileExtension=".woff2" mimeType="font/woff2" />
     </staticContent>
+    <!-- Опционально: снимает ограничение на заголовки/двойное экранирование.
+         На 411 Length Required НЕ влияет (см. раздел 9 — это поведение HTTP-стека IIS,
+         а не Request Filtering; браузерные запросы Content-Length присылают всегда). -->
+    <security>
+      <requestFiltering allowDoubleEscaping="false" />
+    </security>
     <rewrite>
       <rules>
         <!-- 1. /api/* -> PHP (server-php/index.php) -->
         <rule name="API to PHP" stopProcessing="true">
           <match url="^api/(.*)$" />
-          <action type="Rewrite" url="/server-php/index.php" />
+          <action type="Rewrite" url="/server-php/index.php" appendQueryString="true" />
         </rule>
         <!-- 2. Всё остальное -> index.html (SPA routing) -->
         <rule name="SPA fallback" stopProcessing="true">
@@ -248,6 +254,17 @@ mysql -u root -p < server-php\database\schema.mysql.sql
     </rewrite>
   </system.webServer>
 </configuration>
+```
+
+Для отключения WebDAV добавьте внутрь `<system.webServer>` (в тот же `web.config`):
+
+```xml
+    <modules runAllManagedModulesForAllRequests="false">
+      <remove name="WebDAVModule" />
+    </modules>
+    <handlers>
+      <remove name="WebDAV" />
+    </handlers>
 ```
 
 Как это работает: URL Rewrite переписывает любой `/api/...` на `/server-php/index.php`; дальше за обработку отвечает сам `index.php` — он берёт путь из `REQUEST_URI` (поддерживается и деплой в виртуальный каталог вида `/SVdrivers/api/...`), матчит роуты (`/auth/*`, `/users*`, `/reports*`, `/me`, `/health`) и отдаёт JSON. Поэтому правило #1 сознательно всегда указывает на `index.php`, а не сохраняет хвост пути.
@@ -281,6 +298,7 @@ mysql -u root -p < server-php\database\schema.mysql.sql
 | Старый контент после обновления | Очистите кэш браузера (Ctrl+F5); при необходимости добавьте заголовки `Cache-Control` для `index.html` |
 | Ошибка React #310 | Не делайте conditional hooks; пересоберите `npm run build:iis` и обновите `dist` |
 | Нет прав на запись в `server-php\data` | Выдайте `IIS_IUSRS` Modify на каталог (нужен для outbox-писем) |
+| 404 «API-эндпоинт не найден» при входе (`/api/auth/login`), при этом `/api/health` работает | Разбирайте по шагам (актуальная сборка `server-php/index.php` отвечает на `/api/health` **любым методом** и пишет точный путь в поле `debug` ответа 404): **1)** `curl.exe -X POST http://localhost:8080/api/health` — если вернул HTML **«411 Length Required»**, это НЕ PHP и не WebDAV, а HTTP-стек IIS (встроенный фильтр HTTP.sys) отклоняет POST без тела/Content-Length; такой тест корректен только с телом: `curl.exe -X POST -H "Content-Type: application/json" -d "{}" http://localhost:8080/api/health` — должен вернуть JSON `{"ok":true,...,"method":"POST"}`. Если с телом отвечает — до POST из браузера (fetch всегда шлёт Content-Length) PHP доходит, ищите дальше. **2)** Посмотрите ответ `/api/auth/login` во вкладке Network браузера: если тело — JSON `{"error":"Эндпоинт не найден",...}` — запрос ДОШЁЛ до PHP, но PHP не распознал путь. Откройте `http://localhost:8080/server-php/index.php/api/health` напрямую — если это тоже `{"error":"Эндпоинт не найден"}`, значит на сервере лежит СТАРАЯ копия `index.php` (в ней был баг: путь брался из `ORIG_PATH_INFO`, который пуст при FastCGI → все POST падали в 404). Скопируйте актуальный `server-php/index.php` и `server-php/lib/http.php` заново и сделайте Ctrl+F5. **3)** Если прямой URL из п.2 возвращает JSON, а через `/api/...` — нет, смотрите поле `debug.request_uri`/`redirect_url` в ответе 404 login: путь вида `/SVdrivers/api/...` означает сайт в виртуальном каталоге — задайте в `dist\index.html` `window.SVDRIVERS_API_BASE = '/SVdrivers/api';`. **4)** Если вместо JSON приходит HTML-страница IIS с 404 — запрос перехватывает модуль (WebDAV отключён? проверьте Handlers на уровне сайта: не перекрывает ли что-то `*.php` для POST) или правило rewrite отсутствует/опечатка в `web.config`; после правок — `iisreset`. **5)** Убедитесь, что обновлённый фронтенд собран (`npm run build:iis`) и скопирован — клиент дублирует маршрут API в резервном поле `path` JSON-тела, и сервер использует его, если переменные IIS потеряли исходный URL |
 
 ---
 

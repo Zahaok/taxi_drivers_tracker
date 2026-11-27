@@ -9,9 +9,9 @@ import UsersPage from './pages/UsersPage';
 import SettingsPage from './pages/SettingsPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
 import MustChangePasswordModal from './components/MustChangePasswordModal';
-import { Car, LayoutDashboard, FileText, BarChart3, Users, LogOut, Menu, X, Settings2 } from 'lucide-react';
+import { Car, LayoutDashboard, FileText, CalendarDays, BarChart3, Users, LogOut, Menu, X, Settings2 } from 'lucide-react';
 
-type Page = 'dashboard' | 'reports' | 'analytics' | 'users' | 'settings';
+type Page = 'dashboard' | 'reports' | 'daily-reports' | 'analytics' | 'users' | 'settings';
 
 function AppContent() {
   const { user, logout, initializing } = useAuth();
@@ -43,6 +43,7 @@ function AppContent() {
   const navItems: { id: Page; label: string; icon: React.ElementType; roles: string[] }[] = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['driver', 'manager', 'admin'] },
     { id: 'reports', label: 'Отчёты', icon: FileText, roles: ['driver', 'manager', 'admin'] },
+    { id: 'daily-reports', label: 'Ежедневные отчёты', icon: CalendarDays, roles: ['driver', 'manager', 'admin'] },
     { id: 'analytics', label: 'Аналитика', icon: BarChart3, roles: ['manager', 'admin'] },
     { id: 'users', label: 'Пользователи', icon: Users, roles: ['admin'] },
     { id: 'settings', label: 'Настройки расчётов', icon: Settings2, roles: ['admin'] }
@@ -62,6 +63,7 @@ function AppContent() {
     switch (currentPage) {
       case 'dashboard': return <DashboardPage />;
       case 'reports': return <ReportsPage />;
+      case 'daily-reports': return <ReportsPage periodKind="daily" />;
       case 'analytics': return <AnalyticsPage />;
       case 'users': return <UsersPage />;
       case 'settings': return <SettingsPage />;

@@ -18,10 +18,20 @@ function body(bool $allowAnyMethod = false): array
     if (!$allowAnyMethod && !in_array($_SERVER['REQUEST_METHOD'] ?? '', ['POST', 'PUT', 'PATCH', 'DELETE'], true)) {
         return [];
     }
-    $raw = file_get_contents('php://input');
+    // На FastCGI php://input доступен только для ОДНОГО чтения. index.php мог прочитать
+    // тело ради fallback-маршрутизации — переиспользуем кэш, иначе body() вернёт пустоту.
+    $raw = $GLOBALS['SVDRIVERS_RAW_BODY'] ?? null;
+    if (!is_string($raw)) {
+        $raw = file_get_contents('php://input');
+        if (is_string($raw) && $raw !== '') {
+            $GLOBALS['SVDRIVERS_RAW_BODY'] = $raw;
+        }
+    }
     if ($raw === false || $raw === '') return [];
     $d = json_decode($raw, true);
-    return is_array($d) ? $d : [];
+    if (!is_array($d)) return [];
+    unset($d['path']); // служебное поле fallback-маршрутизации не является частью payload
+    return $d;
 }
 
 function bad(string $msg): never        { json_out(400, ['error' => $msg]); }

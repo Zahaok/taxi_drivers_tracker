@@ -48,9 +48,14 @@ async function request<T>(path: string, options: RequestInit = {}, token?: strin
 }
 
 const post = <T = unknown>(p: string, body: any, token?: string | null) =>
-  request<T>(p, { method: 'POST', body: JSON.stringify(body ?? {}) }, token);
+  // Поле "path" — резервный маркер маршрута для PHP-бэкенда (server-php/index.php):
+  // при некоторых настройках IIS URL Rewrite серверные переменные теряют исходный
+  // /api/... путь; сервер использует path только если его не удалось восстановить
+  // из URL, и удаляет это поле из payload перед обработкой.
+  request<T>(p, { method: 'POST', body: JSON.stringify({ ...(body ?? {}), path: p }) }, token);
 const get = <T = unknown>(p: string, token?: string | null) => request<T>(p, { method: 'GET' }, token);
-const put = <T = unknown>(p: string, body: any) => request<T>(p, { method: 'PUT', body: JSON.stringify(body) });
+const put = <T = unknown>(p: string, body: any) =>
+  request<T>(p, { method: 'PUT', body: JSON.stringify({ ...(body ?? {}), path: p }) });
 const del = <T = unknown>(p: string) => request<T>(p, { method: 'DELETE' });
 
 export interface PublicUser {

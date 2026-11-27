@@ -35,12 +35,18 @@ CREATE TABLE IF NOT EXISTS auth_tokens (
   INDEX idx_tokens_user (user_id)
 ) ENGINE=InnoDB;
 
--- Недельные отчёты водителей (колонки — как в supabase/schema.sql)
+-- Отчёты водителей: недельные и дневные (одна таблица, одна логика расчёта).
+-- Период задаётся колонками period/week_number/month/day:
+--   period='weekly' -> год + ISO-неделя (month=day=0);
+--   period='daily'  -> год + месяц + день (week_number=0).
 CREATE TABLE IF NOT EXISTS weekly_reports (
   id INT AUTO_INCREMENT PRIMARY KEY,
   user_id INT NOT NULL,
   year SMALLINT NOT NULL,
   week_number TINYINT NOT NULL,
+  period ENUM('weekly','daily') NOT NULL DEFAULT 'weekly',
+  month TINYINT NOT NULL DEFAULT 0,
+  day TINYINT NOT NULL DEFAULT 0,
   grnz VARCHAR(32) NULL,
   mileage DECIMAL(12,2) NOT NULL DEFAULT 0,
   car VARCHAR(191) NULL,
@@ -65,10 +71,11 @@ CREATE TABLE IF NOT EXISTS weekly_reports (
   edited_by_admin TINYINT(1) NOT NULL DEFAULT 0,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  UNIQUE KEY uniq_user_year_week (user_id, year, week_number),
+  UNIQUE KEY uniq_user_year_week (user_id, period, year, week_number, month, day),
   CONSTRAINT fk_reports_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
   INDEX idx_reports_user_year (user_id, year),
-  INDEX idx_reports_year_week (year, week_number)
+  INDEX idx_reports_year_week (year, week_number),
+  INDEX idx_reports_period (period, year, month, day)
 ) ENGINE=InnoDB;
 
 -- Аудит-лог изменений отчётов менеджером/админом
@@ -88,3 +95,15 @@ CREATE TABLE IF NOT EXISTS report_edit_logs (
 
 -- Демо-аккаунты создаются сидом: php server-php/database/seed.php
 -- (пароли: Admin2026! / Manager2026! / Driver2026!)
+
+-- ============================================================
+-- АПГРЕЙД существующей базы (деплой до появления дневных отчётов):
+-- выполните один раз поверх уже созданной схемы, если колонки ещё не добавлены.
+-- (CREATE TABLE IF NOT EXISTS выше новые колонки в существующую таблицу НЕ добавит.)
+--   ALTER TABLE weekly_reports
+--     ADD COLUMN period ENUM('weekly','daily') NOT NULL DEFAULT 'weekly' AFTER week_number,
+--     ADD COLUMN month TINYINT NOT NULL DEFAULT 0 AFTER period,
+--     ADD COLUMN day   TINYINT NOT NULL DEFAULT 0 AFTER month;
+--   ALTER TABLE weekly_reports DROP INDEX uniq_user_year_week,
+--     ADD UNIQUE KEY uniq_user_year_week (user_id, period, year, week_number, month, day);
+-- ============================================================

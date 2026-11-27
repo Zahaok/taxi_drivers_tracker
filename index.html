@@ -7,6 +7,9 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
     <title>SVdrivers - Учёт доходов и расходов водителей</title>
+    <!-- Базовый путь API: по умолчанию /api (сайт в корне IIS).
+         Для деплоя в виртуальный каталог замените на /SVdrivers/api (DEPLOY-IIS.md, раздел 7) -->
+    <script>window.SVDRIVERS_API_BASE = window.SVDRIVERS_API_BASE || '/api';</script>
   </head>
   <body>
     <div id="root"></div>

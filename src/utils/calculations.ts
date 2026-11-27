@@ -3,6 +3,8 @@ import { roundRubles, num } from './money';
 import { getYandexBreakdown } from './yandex';
 import { getOwnRentBreakdown } from './ownRent';
 import { hourlyRentRate } from './settings';
+// Единая логика периодов (неделя/день) — см. utils/period.ts
+import { periodFromReport, formatPeriodLabel } from './period';
 
 export interface PayoutInput {
   wheelyGross: number;
@@ -164,7 +166,7 @@ export function exportToCSV(reports: any[], users: any[], filename: string = 're
     return [
       user?.username || 'N/A',
       r.year,
-      (() => { const wr = getWeekRange(r.year, r.week_number); return `${formatDate(wr.start)} — ${formatDate(wr.end)}`; })(),
+      formatPeriodLabel(periodFromReport(r)),
       r.grnz ?? '',
       r.mileage ?? 0,
       r.wheely_gross,
@@ -245,7 +247,7 @@ export function exportToExcel(reports: any[], users: any[], filename: string = '
     return [
       user?.username || 'N/A',
       r.year,
-      (() => { const wr = getWeekRange(r.year, r.week_number); return `${formatDate(wr.start)} — ${formatDate(wr.end)}`; })(),
+      formatPeriodLabel(periodFromReport(r)),
       r.grnz ?? '',
       r.mileage ?? 0,
       Math.round(w.base),
