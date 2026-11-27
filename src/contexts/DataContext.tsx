@@ -1,8 +1,9 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { WeeklyReport, ReportEditLog } from '../types';
+import { WeeklyReport, ReportEditLog, ReportPeriod } from '../types';
 import { generateId } from '../utils/calculations';
 import { migrateReport } from '../utils/wheely';
 import { initializeDemoData } from '../utils/demoData';
+import { periodOf, samePeriod, periodDuplicateMessage } from '../utils/period';
 
 interface DataContextType {
   reports: WeeklyReport[];
@@ -19,6 +20,12 @@ const DataContext = createContext<DataContextType | undefined>(undefined);
 
 const REPORTS_KEY = 'taxi_reports';
 const LOGS_KEY = 'taxi_edit_logs';
+
+// Отчёты одного «вида» (недельные или дневные) — одна и та же структура и логика,
+// различается только поле period (записи без period считаются недельными).
+export function filterByPeriod(reports: WeeklyReport[], kind: ReportPeriod): WeeklyReport[] {
+  return reports.filter(r => periodOf(r) === kind);
+}
 
 export function DataProvider({ children }: { children: ReactNode }) {
   const [reports, setReports] = useState<WeeklyReport[]>([]);
@@ -43,17 +50,22 @@ export function DataProvider({ children }: { children: ReactNode }) {
   };
 
   const addReport = (report: Omit<WeeklyReport, 'id' | 'created_at' | 'updated_at'>) => {
+    const kind = periodOf(report as WeeklyReport);
+    const newLike = report as WeeklyReport;
     const existing = reports.find(
-      r => r.user_id === report.user_id && r.year === report.year && r.week_number === report.week_number
+      r => r.user_id === report.user_id && samePeriod(r, newLike)
     );
-    if (existing) return { success: false, error: 'Отчёт за эту неделю уже существует' };
+    if (existing) return { success: false, error: periodDuplicateMessage(kind) };
 
     const newReport: WeeklyReport = {
       ...report,
+      week_number: kind === 'daily' ? 0 : report.week_number,
+      month: kind === 'daily' ? report.month : undefined,
+      day: kind === 'daily' ? report.day : undefined,
       id: generateId(),
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
-    };
+    } as WeeklyReport;
     persistReports([...reports, newReport]);
     return { success: true };
   };
@@ -69,6 +81,27 @@ export function DataProvider({ children }: { children: ReactNode }) {
       'yandex_gross', 'yandex_tips', 'zsd', 'own_rent_gross', 'zsd_own_rent', 'hourly_rent_hours',
       'compensations', 'bonuses', 'adjustmentBonuses', 'fines', 'zsdPayout', 'comment', 'total_driver_payout'
     ];
+
+    // Смена периода тоже попадает в аудит-лог (для дневных — дата, для недельных — диапазон недель)
+    const periodChanged = data.period !== undefined || data.year !== undefined
+      || data.week_number !== undefined || data.month !== undefined || data.day !== undefined;
+    if (periodChanged) {
+      const nextKind = periodOf({ ...report, ...data } as WeeklyReport);
+      const before = periodOf(report) === 'daily' ? `${report.year}.${report.month}.${report.day}` : `${report.year}/W${report.week_number}`;
+      const nr = { ...report, ...data } as WeeklyReport;
+      const after = nextKind === 'daily' ? `${nr.year}.${nr.month}.${nr.day}` : `${nr.year}/W${nr.week_number}`;
+      if (before !== after) {
+        newLogs.push({
+          id: generateId(),
+          report_id: id,
+          changed_by_user_id: changedByUserId,
+          field_name: 'period',
+          old_value: before,
+          new_value: after,
+          changed_at: new Date().toISOString()
+        });
+      }
+    }
 
     fields.forEach(field => {
       if (data[field] !== undefined && data[field] !== report[field]) {

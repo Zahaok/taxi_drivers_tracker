@@ -1,5 +1,5 @@
 <?php
-// /api/reports* — недельные отчёты водителей + аудит-лог изменений.
+// /api/reports* — отчёты водителей (недельные и дневные, одна логика) + аудит-лог изменений.
 // Права (как в матрице README):
 //   driver  — видит/создаёт/редактирует/удаляет только СВОИ отчёты;
 //   manager — видит все, редактирует чужие (с записью в report_edit_logs);
@@ -16,6 +16,9 @@ const REPORT_NUMERIC_FIELDS = [
     'bonuses', 'adjustment_bonuses', 'fines', 'zsd_payout', 'total_driver_payout',
 ];
 const REPORT_TEXT_FIELDS = ['grnz', 'car', 'comment'];
+// Период отчёта: weekly (год + ISO-неделя) или daily (год + месяц + день).
+// Логика расчёта для обоих типов одна и та же — различается только задание периода.
+const REPORT_PERIODS = ['weekly', 'daily'];
 
 function report_fields(): array
 {
@@ -36,12 +39,54 @@ function normalize_report(array $b): array
         $out[$f] = isset($b[$f]) && $b[$f] !== null ? mb_substr(trim((string)$b[$f]), 0, 500) : null;
     }
     $year = (int)($b['year'] ?? 0);
-    $week = (int)($b['week_number'] ?? 0);
     if ($year < 2000 || $year > 2100) bad('Некорректный год');
-    if ($week < 1 || $week > 53) bad('Номер недели должен быть от 1 до 53');
     $out['year'] = $year;
-    $out['week_number'] = $week;
+
+    $period = ($b['period'] ?? 'weekly') === 'daily' ? 'daily' : 'weekly';
+    if (!in_array($b['period'] ?? $period, REPORT_PERIODS, true)) bad('Некорректный тип периода');
+    $out['period'] = $period;
+    if ($period === 'weekly') {
+        $week = (int)($b['week_number'] ?? 0);
+        if ($week < 1 || $week > 53) bad('Номер недели должен быть от 1 до 53');
+        $out['week_number'] = $week;
+        $out['month'] = 0;
+        $out['day'] = 0;
+    } else {
+        $month = (int)($b['month'] ?? 0);
+        $day = (int)($b['day'] ?? 0);
+        if ($month < 1 || $month > 12) bad('Номер месяца должен быть от 1 до 12');
+        $daysInMonth = (int)date('t', mktime(0, 0, 0, $month, 1, $year));
+        if ($day < 1 || $day > $daysInMonth) bad("Некорректный день месяца (в месяце $month/$year дней: $daysInMonth)");
+        $out['week_number'] = 0;
+        $out['month'] = $month;
+        $out['day'] = $day;
+    }
     return $out;
+}
+
+// Ключ уникальности периода (для проверки дублей одним запросом)
+function period_key(array $data): string
+{
+    return $data['period'] === 'daily'
+        ? "{$data['year']}-{$data['month']}-{$data['day']}"
+        : "{$data['year']}-W{$data['week_number']}";
+}
+
+function period_exists(int $userId, array $data, ?int $excludeId = null): bool
+{
+    $sql = $data['period'] === 'daily'
+        ? 'SELECT id FROM weekly_reports WHERE user_id = ? AND period = \'daily\' AND year = ? AND month = ? AND day = ?'
+        : 'SELECT id FROM weekly_reports WHERE user_id = ? AND period = \'weekly\' AND year = ? AND week_number = ?';
+    $params = $data['period'] === 'daily'
+        ? [$userId, $data['year'], $data['month'], $data['day']]
+        : [$userId, $data['year'], $data['week_number']];
+    if ($excludeId !== null) { $sql .= ' AND id <> ?'; $params[] = $excludeId; }
+    return Db::one($sql, $params) !== null;
+}
+
+function duplicate_error(string $period): array
+{
+    return ['error' => $period === 'daily' ? 'Отчёт за этот день уже существует' : 'Отчёт за эту неделю уже существует'];
 }
 
 function can_view(array $user, array $report): bool
@@ -53,7 +98,7 @@ function route_reports(string $method, string $path): void
 {
     $user = require_auth();
 
-    // GET /api/reports?userId=&year= — список отчётов
+    // GET /api/reports?userId=&year=&period=weekly|daily — список отчётов
     if ($path === '' && $method === 'GET') {
         $where = [];
         $params = [];
@@ -68,9 +113,13 @@ function route_reports(string $method, string $path): void
             $where[] = 'r.year = ?';
             $params[] = (int)$_GET['year'];
         }
+        if (!empty($_GET['period']) && in_array($_GET['period'], REPORT_PERIODS, true)) {
+            $where[] = 'r.period = ?';
+            $params[] = $_GET['period'];
+        }
         $sql = 'SELECT r.*, u.username FROM weekly_reports r JOIN users u ON u.id = r.user_id';
         if ($where) $sql .= ' WHERE ' . implode(' AND ', $where);
-        $sql .= ' ORDER BY r.year DESC, r.week_number DESC';
+        $sql .= ' ORDER BY r.year DESC, r.period ASC, r.week_number DESC, r.month DESC, r.day DESC';
         json_out(200, ['reports' => Db::all($sql, $params)]);
     }
 
@@ -84,9 +133,7 @@ function route_reports(string $method, string $path): void
         if (!UsersRepo::byId($targetUserId)) bad('Водитель не найден');
         $data = normalize_report($b);
 
-        $dup = Db::one('SELECT id FROM weekly_reports WHERE user_id = ? AND year = ? AND week_number = ?',
-            [$targetUserId, $data['year'], $data['week_number']]);
-        if ($dup) json_out(409, ['error' => 'Отчёт за эту неделю уже существует']);
+        if (period_exists($targetUserId, $data)) json_out(409, duplicate_error($data['period']));
 
         $cols = ['user_id', ...array_keys($data)];
         $placeholders = implode(', ', array_fill(0, count($cols), '?'));
@@ -131,8 +178,10 @@ function route_reports(string $method, string $path): void
             if ($editingOthersReport) require_manager($user);
 
             $data = normalize_report(array_merge($report, [
-                // из тела запроса берём только известные поля
-                ...array_intersect_key($b, array_flip(array_merge(report_fields(), ['year', 'week_number']))),
+                // из тела запроса берём только известные поля (+ поля периода)
+                ...array_intersect_key($b, array_flip(array_merge(
+                    report_fields(), ['year', 'week_number', 'period', 'month', 'day'],
+                ))),
             ]));
 
             $set = [];
@@ -148,14 +197,22 @@ function route_reports(string $method, string $path): void
                     $changes[$f] = [(string)($old ?? ''), (string)($new ?? '')];
                 }
             }
-            // смена периода (год/неделя) тоже возможна
-            if ((int)$report['year'] !== $data['year'] || (int)$report['week_number'] !== $data['week_number']) {
-                $dup = Db::one('SELECT id FROM weekly_reports WHERE user_id = ? AND year = ? AND week_number = ? AND id <> ?',
-                    [(int)$report['user_id'], $data['year'], $data['week_number'], $reportId]);
-                if ($dup) json_out(409, ['error' => 'Отчёт за эту неделю уже существует']);
+            // смена периода (тип / год / неделя / месяц / день) тоже возможна
+            $periodChanged = (int)$report['year'] !== $data['year']
+                || ($report['period'] ?? 'weekly') !== $data['period']
+                || (int)($report['week_number'] ?? 0) !== $data['week_number']
+                || (int)($report['month'] ?? 0) !== $data['month']
+                || (int)($report['day'] ?? 0) !== $data['day'];
+            if ($periodChanged) {
+                if (period_exists((int)$report['user_id'], $data, $reportId)) {
+                    json_out(409, duplicate_error($data['period']));
+                }
+                $set[] = 'period = ?';       $execParams[] = $data['period'];
                 $set[] = 'year = ?';         $execParams[] = $data['year'];
                 $set[] = 'week_number = ?';  $execParams[] = $data['week_number'];
-                $changes['period'] = ["{$report['year']}/W{$report['week_number']}", "{$data['year']}/W{$data['week_number']}"];
+                $set[] = 'month = ?';        $execParams[] = $data['month'];
+                $set[] = 'day = ?';          $execParams[] = $data['day'];
+                $changes['period'] = [period_key($report), period_key($data)];
             }
 
             if ($editingOthersReport) {

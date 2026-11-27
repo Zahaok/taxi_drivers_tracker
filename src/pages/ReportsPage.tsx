@@ -2,7 +2,8 @@ import React, { useState, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useData } from '../contexts/DataContext';
 import { WeeklyReport } from '../types';
-import { calculateDriverPayout, getWeekNumber, getWeekRange, formatDate, formatCurrency, formatDateTime, exportToExcel, effectiveZsdPayout } from '../utils/calculations';
+import { calculateDriverPayout, getWeekNumber, formatDate, formatCurrency, formatDateTime, exportToExcel, effectiveZsdPayout } from '../utils/calculations';
+import { PeriodKind, periodOf, makePeriod, periodFromReport, formatPeriodLabel, daysInMonth, comparePeriodsDesc, samePeriod } from '../utils/period';
 import { getWheelyBreakdown } from '../utils/wheely';
 import { getYandexBreakdown } from '../utils/yandex';
 import { getOwnRentBreakdown } from '../utils/ownRent';
@@ -18,19 +19,24 @@ const toInputValue = (v: NumOrEmpty): string => (v === '' ? '' : String(v));
 interface ReportFormProps {
   report?: WeeklyReport;
   userId: string;
+  periodKind: PeriodKind;
   onSave: (data: any) => void;
   onCancel: () => void;
 }
 
-function ReportForm({ report, userId, onSave, onCancel }: ReportFormProps) {
+function ReportForm({ report, userId, periodKind, onSave, onCancel }: ReportFormProps) {
   const currentYear = new Date().getFullYear();
   const currentWeek = getWeekNumber(new Date());
+  const currentMonth = new Date().getMonth() + 1;
+  const currentDate = new Date().getDate();
 
   // Пустое поле = ещё не введено (не показываем «0»); при расчётах пусто == 0
   const numOrEmpty = (v: number | undefined): NumOrEmpty => (v && v !== 0 ? v : '');
 
   const [year, setYear] = useState<number>(report?.year || currentYear);
   const [weekNumber, setWeekNumber] = useState<number>(report?.week_number || currentWeek);
+  const [month, setMonth] = useState<number>(report?.month || currentMonth);
+  const [day, setDay] = useState<number>(report?.day || currentDate);
   const [wheelyGross, setWheelyGross] = useState<NumOrEmpty>(numOrEmpty(report?.wheely_gross));
   const [wheelyAgentFee, setWheelyAgentFee] = useState<NumOrEmpty>(numOrEmpty(report?.wheely_agent_fee));
   const [wheelyAirportParking, setWheelyAirportParking] = useState<NumOrEmpty>(numOrEmpty(report?.wheely_airport_parking));
@@ -113,15 +119,17 @@ function ReportForm({ report, userId, onSave, onCancel }: ReportFormProps) {
   // Доход до корректировок к выплатам (без компенсаций, штрафов и ЗСД из выплаты)
   const payoutBeforeAdjustments = totalPayout - effectiveCompensations - safe(adjustmentBonuses) + safe(fines) + effZsdPayout;
 
-  const weekRange = getWeekRange(year, weekNumber);
-  const weeks = Array.from({ length: 52 }, (_, i) => i + 1);
+  const periodLabel = formatPeriodLabel(makePeriod(periodKind, year, periodKind === 'daily' ? month : weekNumber, day));
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     onSave({
       user_id: userId,
+      period: periodKind,
       year,
-      week_number: weekNumber,
+      week_number: periodKind === 'weekly' ? weekNumber : 0,
+      month: periodKind === 'daily' ? month : undefined,
+      day: periodKind === 'daily' ? day : undefined,
       wheely_gross: safe(wheelyGross),
       wheely_agent_fee: safe(wheelyAgentFee),
       wheely_airport_parking: safe(wheelyAirportParking),
@@ -160,15 +168,47 @@ function ReportForm({ report, userId, onSave, onCancel }: ReportFormProps) {
               {[2024, 2025, 2026].map(y => <option key={y} value={y}>{y}</option>)}
             </select>
           </div>
-          <div>
-            <label className="text-gray-600 text-sm mb-1 block">Период (7 дней)</label>
-            <select value={weekNumber} onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setWeekNumber(Number(e.target.value))}
-              className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-amber-400">
-              {weeks.map(w => {
-                const r = getWeekRange(year, w);
-                return <option key={w} value={w}>{formatDate(r.start)} — {formatDate(r.end)}</option>;
-              })}
-            </select>
+          {periodKind === 'weekly' ? (
+            <div>
+              <label className="text-gray-600 text-sm mb-1 block">Период (7 дней)</label>
+              <select value={weekNumber} onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setWeekNumber(Number(e.target.value))}
+                className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-amber-400">
+                {Array.from({ length: 52 }, (_, i) => i + 1).map(w => {
+                  const label = formatPeriodLabel(makePeriod('weekly', year, w));
+                  return <option key={w} value={w}>{label}</option>;
+                })}
+              </select>
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-gray-600 text-sm mb-1 block">Месяц</label>
+                  <select value={month} onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
+                    const m = Number(e.target.value);
+                    setMonth(m);
+                    setDay(d => Math.min(d, daysInMonth(year, m))); // день не должен выходить за границы месяца
+                  }}
+                    className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-amber-400">
+                    {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
+                      <option key={m} value={m}>{new Date(year, m - 1, 1).toLocaleDateString('ru-RU', { month: 'long' })}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-gray-600 text-sm mb-1 block">День</label>
+                  <select value={day} onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setDay(Number(e.target.value))}
+                    className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-amber-400">
+                    {Array.from({ length: daysInMonth(year, month) }, (_, i) => i + 1).map(d => (
+                      <option key={d} value={d}>{d}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </>
+          )}
+          <div className="sm:col-span-2 text-xs text-gray-500 -mt-1">
+            Отчётный период: <b className="text-gray-700">{periodLabel}</b>
           </div>
           <div className="sm:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1 border-t border-gray-200">
             <div>

@@ -15,7 +15,11 @@ export interface WeeklyReport {
   id: string;
   user_id: string;
   year: number;
-  week_number: number;
+  week_number: number;        // недельный отчёт (period='weekly'); в дневном = 0
+  // Дневные отчёты: тот же набор полей и та же логика расчёта, но период — один день.
+  period?: ReportPeriod;      // отсутствует у записей, созданных до появления дневных отчётов == 'weekly'
+  month?: number;             // 1..12 (только для дневных)
+  day?: number;               // 1..31  (только для дневных)
   grnz?: string;              // ГРНЗ (государственный регистрационный знак ТС)
   mileage?: number;           // Пробег ТС за период, км
   car?: string;               // Автомобиль (марка/модель) — для детального просмотра отчёта
@@ -40,6 +44,10 @@ export interface WeeklyReport {
   created_at: string;
   updated_at: string;
 }
+
+// Единая «отчётная» сущность: период задаётся либо неделей (year + week_number),
+// либо днём (year + month + day). Логика расчёта полностью общая — см. utils/period.ts.
+export type ReportPeriod = 'weekly' | 'daily';
 
 export interface ReportEditLog {
   id: string;
