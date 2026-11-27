@@ -18,10 +18,15 @@ function body(bool $allowAnyMethod = false): array
     if (!$allowAnyMethod && !in_array($_SERVER['REQUEST_METHOD'] ?? '', ['POST', 'PUT', 'PATCH', 'DELETE'], true)) {
         return [];
     }
-    $raw = file_get_contents('php://input');
+    $raw = $GLOBALS['SVDRIVERS_BODY_OVERRIDE'] ?? null; // уже прочитано в index.php (fallback-маршрутизация)
+    if (!is_string($raw)) {
+        $raw = file_get_contents('php://input');
+    }
     if ($raw === false || $raw === '') return [];
     $d = json_decode($raw, true);
-    return is_array($d) ? $d : [];
+    if (!is_array($d)) return [];
+    unset($d['path']); // служебное поле fallback-маршрутизации не является частью payload
+    return $d;
 }
 
 function bad(string $msg): never        { json_out(400, ['error' => $msg]); }

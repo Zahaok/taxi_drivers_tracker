@@ -233,7 +233,7 @@ mysql -u root -p < server-php\database\schema.mysql.sql
         <!-- 1. /api/* -> PHP (server-php/index.php) -->
         <rule name="API to PHP" stopProcessing="true">
           <match url="^api/(.*)$" />
-          <action type="Rewrite" url="/server-php/index.php" />
+          <action type="Rewrite" url="/server-php/index.php" appendQueryString="true" />
         </rule>
         <!-- 2. Всё остальное -> index.html (SPA routing) -->
         <rule name="SPA fallback" stopProcessing="true">
@@ -281,6 +281,7 @@ mysql -u root -p < server-php\database\schema.mysql.sql
 | Старый контент после обновления | Очистите кэш браузера (Ctrl+F5); при необходимости добавьте заголовки `Cache-Control` для `index.html` |
 | Ошибка React #310 | Не делайте conditional hooks; пересоберите `npm run build:iis` и обновите `dist` |
 | Нет прав на запись в `server-php\data` | Выдайте `IIS_IUSRS` Modify на каталог (нужен для outbox-писем) |
+| 404 «API-эндпоинт не найден» при входе (`/api/auth/login`) | Проверьте по порядку: 1) папка `server-php/` скопирована в веб-корень сайта и в корне лежит `web.config` с правилом «API to PHP»; 2) открыт именно `/server-php/index.php` (в браузере: `http://localhost:8080/server-php/index.php/api/health` — если отвечает JSON, PHP и путь работают); 3) **самая частая причина** — сайт задеплоен в виртуальный каталог IIS (`http://host/SVdrivers/`): тогда фронтенд просит `/api/...` от корня домена, а не из каталога. Исправляется одной строкой в `dist\index.html`: `window.SVDRIVERS_API_BASE = '/SVdrivers/api';` (в свежей сборке этот скрипт уже добавлен в `<head>` — просто поменяйте значение); 4) убедитесь, что в правиле rewrite стоит `appendQueryString="true"` (иначе теряются `?token=...`), после правки web.config сделайте `iisreset` или коснитесь файла; 5) если URL Rewrite теряет путь полностью — новый сервер восстанавливает маршрут из резервного поля `path` в теле POST/PUT-запроса (требуется актуальная сборка фронта `npm run build:iis`); точный путь, который видит сервер, — в поле `debug` ответа 404 |
 
 ---
 
