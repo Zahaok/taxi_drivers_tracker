@@ -18,9 +18,14 @@ function body(bool $allowAnyMethod = false): array
     if (!$allowAnyMethod && !in_array($_SERVER['REQUEST_METHOD'] ?? '', ['POST', 'PUT', 'PATCH', 'DELETE'], true)) {
         return [];
     }
-    $raw = $GLOBALS['SVDRIVERS_BODY_OVERRIDE'] ?? null; // уже прочитано в index.php (fallback-маршрутизация)
+    // На FastCGI php://input доступен только для ОДНОГО чтения. index.php мог прочитать
+    // тело ради fallback-маршрутизации — переиспользуем кэш, иначе body() вернёт пустоту.
+    $raw = $GLOBALS['SVDRIVERS_RAW_BODY'] ?? null;
     if (!is_string($raw)) {
         $raw = file_get_contents('php://input');
+        if (is_string($raw) && $raw !== '') {
+            $GLOBALS['SVDRIVERS_RAW_BODY'] = $raw;
+        }
     }
     if ($raw === false || $raw === '') return [];
     $d = json_decode($raw, true);

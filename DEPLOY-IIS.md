@@ -250,6 +250,17 @@ mysql -u root -p < server-php\database\schema.mysql.sql
 </configuration>
 ```
 
+Для отключения WebDAV добавьте внутрь `<system.webServer>` (в тот же `web.config`):
+
+```xml
+    <modules runAllManagedModulesForAllRequests="false">
+      <remove name="WebDAVModule" />
+    </modules>
+    <handlers>
+      <remove name="WebDAV" />
+    </handlers>
+```
+
 Как это работает: URL Rewrite переписывает любой `/api/...` на `/server-php/index.php`; дальше за обработку отвечает сам `index.php` — он берёт путь из `REQUEST_URI` (поддерживается и деплой в виртуальный каталог вида `/SVdrivers/api/...`), матчит роуты (`/auth/*`, `/users*`, `/reports*`, `/me`, `/health`) и отдаёт JSON. Поэтому правило #1 сознательно всегда указывает на `index.php`, а не сохраняет хвост пути.
 
 4. Фронтенд обращается к `/api/...` относительно своего адреса — ничего дополнительно настраивать не нужно.
@@ -281,7 +292,7 @@ mysql -u root -p < server-php\database\schema.mysql.sql
 | Старый контент после обновления | Очистите кэш браузера (Ctrl+F5); при необходимости добавьте заголовки `Cache-Control` для `index.html` |
 | Ошибка React #310 | Не делайте conditional hooks; пересоберите `npm run build:iis` и обновите `dist` |
 | Нет прав на запись в `server-php\data` | Выдайте `IIS_IUSRS` Modify на каталог (нужен для outbox-писем) |
-| 404 «API-эндпоинт не найден» при входе (`/api/auth/login`) | Проверьте по порядку: 1) папка `server-php/` скопирована в веб-корень сайта и в корне лежит `web.config` с правилом «API to PHP»; 2) открыт именно `/server-php/index.php` (в браузере: `http://localhost:8080/server-php/index.php/api/health` — если отвечает JSON, PHP и путь работают); 3) **самая частая причина** — сайт задеплоен в виртуальный каталог IIS (`http://host/SVdrivers/`): тогда фронтенд просит `/api/...` от корня домена, а не из каталога. Исправляется одной строкой в `dist\index.html`: `window.SVDRIVERS_API_BASE = '/SVdrivers/api';` (в свежей сборке этот скрипт уже добавлен в `<head>` — просто поменяйте значение); 4) убедитесь, что в правиле rewrite стоит `appendQueryString="true"` (иначе теряются `?token=...`), после правки web.config сделайте `iisreset` или коснитесь файла; 5) если URL Rewrite теряет путь полностью — новый сервер восстанавливает маршрут из резервного поля `path` в теле POST/PUT-запроса (требуется актуальная сборка фронта `npm run build:iis`); точный путь, который видит сервер, — в поле `debug` ответа 404 |
+| 404 «API-эндпоинт не найден» при входе (`/api/auth/login`), при этом `/api/health` работает | Ключевой признак: `api/health` — это **GET**, а вход — **POST**. Если POST возвращает 404, а GET нет, дело почти всегда в модуле **WebDAV** (входит в типовой набор IIS): его обработчик перехватывает POST/PUT/PATCH/DELETE и отдаёт 404 до того, как запрос дойдёт до PHP. **Решение:** в IIS Manager выберите сайт → «WebDAV Authoring Rules» → выключить WebDAV (Disable); либо удалите модуль для сайта: конфигурация сайта → Modules → убрать `WebDAVModule`; плюс в `web.config` добавьте блок (см. ниже). Проверка после отключения: `curl.exe -X POST http://localhost:8080/api/health` — должен вернуть JSON `{"ok":true,...}`, а не HTML/404. Прочие причины по порядку: 1) папка `server-php/` скопирована в веб-корень и в корне лежит `web.config` с правилом «API to PHP»; 2) проверьте напрямую: `http://localhost:8080/server-php/index.php/api/health` отвечает JSON; 3) сайт в виртуальном каталоге IIS (`http://host/SVdrivers/`) — фронтенд просит `/api/...` от корня домена: задайте в `dist\index.html` `window.SVDRIVERS_API_BASE = '/SVdrivers/api';` (строка уже есть в `<head>` — поменяйте значение); 4) `appendQueryString="true"` в правиле rewrite; после правки web.config — `iisreset`; 5) сервер дополнительно восстанавливает маршрут из резервного поля `path` в теле POST/PUT (актуальная сборка фронта) и пишет точный путь в поле `debug` ответа 404 |
 
 ---
 
