@@ -103,8 +103,13 @@ if ($uri === null) {
 $path = rtrim((string)substr($uri, strlen('/api')), '/'); // '', '/auth/login', '/users/3/reset-password'...
 
 try {
-    if ($path === '' || $path === '/health') {
-        json_out(200, ['ok' => true, 'service' => 'svdrivers-api-php']);
+    // /api/health отвечает на ЛЮБОЙ метод (включая POST): это эталонная точка для
+    // диагностики IIS — `curl -X POST http://host:8080/api/health` должна вернуть
+    // JSON. Если вместо JSON приходит HTML «411 Length Required» — запрос не доходит
+    // до PHP (обычно Request Filtering блокирует POST без заголовка Content-Length).
+    if (($path === '' || $path === '/health')) {
+        header('Allow: GET, POST');
+        json_out(200, ['ok' => true, 'service' => 'svdrivers-api-php', 'method' => $method]);
     } elseif (str_starts_with($path, '/auth/')) {
         route_auth($method, substr($path, strlen('/auth')));
     } elseif ($path === '/me' && $method === 'GET') {
